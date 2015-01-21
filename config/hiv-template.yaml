@@ -1,0 +1,12 @@
+---
+details:
+  - analysis: variant2
+    genome_build: HXB2
+    algorithm:
+      aligner: bwa
+      mark_duplicates: false
+      recalibrate: false
+      realign: false
+      variantcaller: false
+      platform: illumina
+      quality_format: Standard

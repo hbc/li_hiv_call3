@@ -1,0 +1,785 @@
+details:
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare13
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare13-6497-B3_S18_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare13-6497-B3_S18_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: Control1
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/Control-Library-6480-A1_S1_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/Control-Library-6480-A1_S1_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare11
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare11-6495-H2_S16_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare11-6495-H2_S16_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare12
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare12-6496-A3_S17_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare12-6496-A3_S17_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-01
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-01-6481-B1_S2_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-01-6481-B1_S2_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare14
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare14-6498-C3_S19_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare14-6498-C3_S19_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-02
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-02-6482-C1_S3_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-02-6482-C1_S3_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare15
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare15-6499-D3_S20_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare15-6499-D3_S20_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-03
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-03-6483-D1_S4_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-03-6483-D1_S4_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare16
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare16-6500-E3_S21_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare16-6500-E3_S21_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-04
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-04-6484-E1_S5_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-04-6484-E1_S5_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare17
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare17-6501-F3_S22_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare17-6501-F3_S22_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-06
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-06-6485-F1_S6_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-06-6485-F1_S6_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare18
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare18-6502-G3_S23_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare18-6502-G3_S23_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-07
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-07-6486-G1_S7_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-07-6486-G1_S7_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare19
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare19-6503-H3_S24_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare19-6503-H3_S24_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-08
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-08-6487-H1_S8_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-08-6487-H1_S8_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare2
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare2-6504-A4_S25_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare2-6504-A4_S25_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-09
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-09-6488-A2_S9_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-09-6488-A2_S9_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare20
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare20-6505-B4_S26_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare20-6505-B4_S26_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-10
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-10-6489-B2_S10_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-10-6489-B2_S10_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-12
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-12-6490-C2_S11_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-12-6490-C2_S11_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-14
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-14-6491-D2_S12_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-14-6491-D2_S12_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: HIVG-16
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-16-6492-E2_S13_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/HIVG-16-6492-E2_S13_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare1
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare1-6493-F2_S14_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare1-6493-F2_S14_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare10
+  files:
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare10-6494-G2_S15_L001_R1_001.fastq.gz
+  - ../input/141216_M01450_0067_000000000-A8T6D/SeraCare10-6494-G2_S15_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: Control2
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/Control-Library-6480-A1_S1_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/Control-Library-6480-A1_S1_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare9
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare9-6520-A6_S16_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare9-6520-A6_S16_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: TH-1
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-1-6521-B6_S17_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-1-6521-B6_S17_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare21
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare21-6506-C4_S2_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare21-6506-C4_S2_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: TH-3
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-3-6523-D6_S19_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-3-6523-D6_S19_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare22
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare22-6507-D4_S3_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare22-6507-D4_S3_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: TH-4
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-4-6524-E6_S20_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-4-6524-E6_S20_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare23
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare23-6508-E4_S4_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare23-6508-E4_S4_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: TH-5
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-5-6525-F6_S21_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-5-6525-F6_S21_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare24
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare24-6509-F4_S5_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare24-6509-F4_S5_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: TH-6
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-6-6526-G6_S22_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-6-6526-G6_S22_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare25
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare25-6510-G4_S6_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare25-6510-G4_S6_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare26
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare26-6511-H4_S7_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare26-6511-H4_S7_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: VQA-1
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/VQA-1-6527-H6_S23_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/VQA-1-6527-H6_S23_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare27
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare27-6512-A5_S8_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare27-6512-A5_S8_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: VQA-3
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/VQA-3-6528-A7_S24_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/VQA-3-6528-A7_S24_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare28
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare28-6513-B5_S9_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare28-6513-B5_S9_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: VQA-4
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/VQA-4-6529-B7_S25_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/VQA-4-6529-B7_S25_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare3
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare3-6514-C5_S10_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare3-6514-C5_S10_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: VQA-5
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/VQA-5-6530-C7_S26_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/VQA-5-6530-C7_S26_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare4
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare4-6515-D5_S11_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare4-6515-D5_S11_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare5
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare5-6516-E5_S12_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare5-6516-E5_S12_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare6
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare6-6517-F5_S13_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare6-6517-F5_S13_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare7
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare7-6518-G5_S14_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare7-6518-G5_S14_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: SeraCare8
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare8-6519-H5_S15_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/SeraCare8-6519-H5_S15_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+- algorithm:
+    aligner: bwa
+    mark_duplicates: false
+    platform: illumina
+    quality_format: Standard
+    realign: false
+    recalibrate: false
+    variantcaller: false
+  analysis: variant2
+  description: TH-2
+  files:
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-2-6522-C6_S18_L001_R1_001.fastq.gz
+  - ../input/141218_M01201_0059_000000000-A87M1/TH-2-6522-C6_S18_L001_R2_001.fastq.gz
+  genome_build: HXB2
+  metadata: {}
+fc_date: '2015-01-20'
+fc_name: li_hiv_call3
+upload:
+  dir: ../final
