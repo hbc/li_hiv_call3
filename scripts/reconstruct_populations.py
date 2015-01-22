@@ -3,12 +3,23 @@
 
 Requires:
   bedtools
-  ViQuaS
+  samtools
+  ViQuaS (unpack in work directory for default configuration)
+  R
+  perl
+
+Library installs:
+  cpanm -i BioPerl
+  cpanm -i Perl4::CoreLibs # getopts.pl dependency
+  R -e 'install.packages("seqinr")'
+  R -e 'source("http://bioconductor.org/biocLite.R"); biocLite("Biostrings")'
 
 Usage:
     reconstruct_populations.py <config_file> [<BAM files>]
 """
+import contextlib
 import os
+import shutil
 import sys
 import subprocess
 
@@ -21,18 +32,62 @@ def main(config_file, *bam_files):
     for bam_file in bam_files:
         for region, region_file in regions:
             subbam_file = _select_regions(bam_file, region_file, region)
-            recon_dir = _run_viquas(subbam_file, config["ref_file"])
-            print recon_dir
+            recon_file = _run_viquas(subbam_file, config, region)
+            print recon_file
 
-def _run_viquas(bam_file, ref_file):
+def _run_viquas(bam_file, config, region):
     out_dir = "%s-viquas" % os.path.splitext(bam_file)[0]
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-    orig_dir = os.getcwd()
-    os.chdir(out_dir)
+    out_file = os.path.join(out_dir, "ViQuaS-Spectrum.fa")
+    bam_file = os.path.join(os.getcwd(), bam_file)
+    ref_file = os.path.join(os.getcwd(), config["ref_file"])
+    viquas_dir = os.path.join(os.getcwd(), config["viquas_dir"])
+    # parameter settings for Illumina data from ViQuaS paper
+    o = 5
+    r = 0.7
+    chrom, start, end = region.split("-")
+    size = int(end) - int(start)
+    if not os.path.exists(out_file):
+        with _chdir(out_dir):
+            with _copy_viquas(viquas_dir):
+                cmd = "Rscript ViQuaS.R {ref_file} {bam_file} {o} '' 1 {size}"
+                subprocess.check_call(cmd.format(**locals()), shell=True)
+    return out_file
 
-    cmd = "Rscript ViQuaS.R {ref_file} {bam_file} 0 1 1 {size}"
-    os.chdir(orig_dir)
+@contextlib.contextmanager
+def _chdir(new_dir):
+    cur_dir = os.getcwd()
+    if not os.path.exists(new_dir):
+        os.makedirs(new_dir)
+    os.chdir(new_dir)
+    try:
+        yield
+    finally:
+        os.chdir(cur_dir)
+
+@contextlib.contextmanager
+def _copy_viquas(viquas_dir):
+    """ViQuaS requires running within the install directory.
+    This copies it into the current directory so multiple instances can be
+    run simultaneously.
+    """
+    files = ["ViQuaS.R"]
+    dirs = ["tools", "viquas_files"]
+    for fname in files:
+        if not os.path.exists(fname):
+            shutil.copy(os.path.join(viquas_dir, fname), os.path.join(os.getcwd(), fname))
+    for dirname in dirs:
+        if not os.path.exists(dirname):
+            shutil.copytree(os.path.join(viquas_dir, dirname),
+                            os.path.join(os.getcwd(), dirname))
+    try:
+        yield
+    finally:
+        for fname in files:
+            if os.path.exists(fname):
+                os.remove(fname)
+        for dirname in dirs:
+            if os.path.exists(dirname):
+                shutil.rmtree(dirname)
 
 def _select_regions(bam_file, region_file, region):
     """Extracts reads only in regions of interest using bedtools intersect.
