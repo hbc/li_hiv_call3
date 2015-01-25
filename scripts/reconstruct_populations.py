@@ -37,6 +37,7 @@ import joblib
 def main(cores, config_file, *bam_files):
     with open(config_file) as in_handle:
         config = yaml.safe_load(in_handle)
+    _index_ref_file(config["ref_file"])
     regions = _subset_region_file(config["regions"])
     to_run = []
     for bam_file in bam_files:
@@ -47,11 +48,11 @@ def main(cores, config_file, *bam_files):
         print recon_file
 
 def _run_viquas(bam_file, config, region):
-    out_dir = "%s-viquas" % os.path.splitext(bam_file)[0]
+    out_dir = os.path.join(os.getcwd(), "%s-viquas" % os.path.splitext(bam_file)[0])
     out_file = os.path.join(out_dir, "ViQuaS-Spectrum.fa")
     bam_file = os.path.join(os.getcwd(), bam_file)
-    ref_file = os.path.join(os.getcwd(), config["ref_file"])
     viquas_dir = os.path.join(os.getcwd(), config["viquas_dir"])
+    ref_file = _subset_ref_file(config["ref_file"], out_dir, region)
     # parameter settings for Illumina data from ViQuaS paper
     o = 5
     r = 0.7
@@ -60,7 +61,7 @@ def _run_viquas(bam_file, config, region):
     if not os.path.exists(out_file):
         with _chdir(out_dir):
             with _copy_viquas(viquas_dir):
-                cmd = "Rscript ViQuaS.R {ref_file} {bam_file} {o} '' 1 {size}"
+                cmd = "Rscript ViQuaS.R {ref_file} {bam_file} {o} '' 0 {size}"
                 subprocess.check_call(cmd.format(**locals()), shell=True)
     return out_file
 
@@ -126,6 +127,24 @@ def _subset_region_file(in_file):
                 out_handle.write(line)
             out.append(("%s-%s-%s" % (chrom, start, end), out_file))
     return out
+
+# reference management
+
+def _subset_ref_file(ref_file, out_dir, region):
+    chrom, start, end = region.split("-")
+    base, ext = os.path.splitext(os.path.basename(ref_file))
+    out_file = os.path.join(out_dir, "%s-%s%s" % (base, region, ext))
+    region = "%s:%s-%s" % (chrom, start, end)
+    cmd = "samtools faidx {ref_file} {region} > {out_file}"
+    subprocess.check_call(cmd.format(**locals()), shell=True)
+    return out_file
+
+def _index_ref_file(ref_file):
+    out_file = "%s.fai" % ref_file
+    if not os.path.exists(ref_file):
+        cmd = ["samtools", "faidx", ref_file]
+        subprocess.check_call(cmd)
+    return out_file
 
 if __name__ == "__main__":
     main(*sys.argv[1:])
