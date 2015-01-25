@@ -4,7 +4,8 @@
 Requires:
   bedtools
   samtools
-  ViQuaS (unpack in work directory for default configuration)
+  ViQuaS (unpack in work directory)
+         (wget 'http://downloads.sourceforge.net/project/viquas/ViQuaS1.3.tar.gz' && tar -xzvpf)
   R
   perl
 
@@ -14,8 +15,15 @@ Library installs:
   R -e 'install.packages("seqinr")'
   R -e 'source("http://bioconductor.org/biocLite.R"); biocLite("Biostrings")'
 
+  # local installs
+  export PERL5LIB=/path/to/lib/perl5:
+  export R_LIBS=/path/to/lib/R/site-library
+
+  cpanm -i --local-lib=/path/to ...
+  R -e '.libPaths(c("/path/to/lib/R/site-library")); ...'
+
 Usage:
-    reconstruct_populations.py <config_file> [<BAM files>]
+    reconstruct_populations.py <num_cores> <config_file> [<BAM files>]
 """
 import contextlib
 import os
@@ -24,16 +32,19 @@ import sys
 import subprocess
 
 import yaml
+import joblib
 
-def main(config_file, *bam_files):
+def main(cores, config_file, *bam_files):
     with open(config_file) as in_handle:
         config = yaml.safe_load(in_handle)
     regions = _subset_region_file(config["regions"])
+    to_run = []
     for bam_file in bam_files:
         for region, region_file in regions:
             subbam_file = _select_regions(bam_file, region_file, region)
-            recon_file = _run_viquas(subbam_file, config, region)
-            print recon_file
+            to_run.append((subbam_file, config, region))
+    for recon_file in joblib.Parallel(int(cores))(joblib.delayed(_run_viquas)(f, c, r) for f, c, r in to_run):
+        print recon_file
 
 def _run_viquas(bam_file, config, region):
     out_dir = "%s-viquas" % os.path.splitext(bam_file)[0]
