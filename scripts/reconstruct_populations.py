@@ -31,8 +31,10 @@ import shutil
 import sys
 import subprocess
 
-import yaml
+
 import joblib
+import pyfaidx
+import yaml
 
 def main(cores, config_file, *bam_files):
     with open(config_file) as in_handle:
@@ -44,15 +46,21 @@ def main(cores, config_file, *bam_files):
         for region, region_file in regions:
             subbam_file = _select_regions(bam_file, region_file, region)
             to_run.append((subbam_file, config, region))
+    def by_size((f, c, r)):
+        chrom, start, end = r.split("-")
+        return int(end) - int(start)
+    to_run.sort(key=by_size)
     for recon_file in joblib.Parallel(int(cores))(joblib.delayed(_run_viquas)(f, c, r) for f, c, r in to_run):
         print recon_file
 
 def _run_viquas(bam_file, config, region):
     out_dir = os.path.join(os.getcwd(), "%s-viquas" % os.path.splitext(bam_file)[0])
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
     out_file = os.path.join(out_dir, "ViQuaS-Spectrum.fa")
     bam_file = os.path.join(os.getcwd(), bam_file)
     viquas_dir = os.path.join(os.getcwd(), config["viquas_dir"])
-    ref_file = _subset_ref_file(config["ref_file"], out_dir, region)
+    ref_file = os.path.join(os.getcwd(), config["ref_file"])
     # parameter settings for Illumina data from ViQuaS paper
     o = 5
     r = 0.7
@@ -63,7 +71,7 @@ def _run_viquas(bam_file, config, region):
             with _copy_viquas(viquas_dir):
                 cmd = "Rscript ViQuaS.R {ref_file} {bam_file} {o} '' 0 {size}"
                 subprocess.check_call(cmd.format(**locals()), shell=True)
-    return out_file
+    return _subset_viquas_file(out_file, region)
 
 @contextlib.contextmanager
 def _chdir(new_dir):
@@ -130,12 +138,25 @@ def _subset_region_file(in_file):
 
 # reference management
 
+def _subset_viquas_file(in_file, region):
+    base, ext = os.path.splitext(in_file)
+    out_file = "%s-%s%s" % (base, region, ext)
+    chrom, start, end = region.split("-")
+    start = int(start) - 1
+    end = int(end)
+    if not os.path.exists(out_file):
+        index = pyfaidx.Fasta(in_file)
+        with open(out_file, "w") as out_handle:
+            for recid in index.keys():
+                out_handle.write(repr(index[recid][start:end]) + "\n")
+    return out_file
+
 def _subset_ref_file(ref_file, out_dir, region):
     chrom, start, end = region.split("-")
     base, ext = os.path.splitext(os.path.basename(ref_file))
     out_file = os.path.join(out_dir, "%s-%s%s" % (base, region, ext))
-    region = "%s:%s-%s" % (chrom, start, end)
-    cmd = "samtools faidx {ref_file} {region} > {out_file}"
+    region = "%s:%s-%s" % (chrom, int(start), int(end))
+    cmd = "samtools faidx {ref_file} {region} | sed 's/{region}/{chrom}/' > {out_file}"
     subprocess.check_call(cmd.format(**locals()), shell=True)
     return out_file
 
