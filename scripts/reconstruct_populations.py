@@ -4,6 +4,8 @@
 Requires:
   bedtools
   samtools
+  pear (http://www.exelixis-lab.org/web/software/pear)
+  bwa
   ViQuaS (unpack in work directory)
          (wget 'http://downloads.sourceforge.net/project/viquas/ViQuaS1.3.tar.gz' && tar -xzvpf)
   R
@@ -45,7 +47,9 @@ def main(cores, config_file, *bam_files):
     for bam_file in bam_files:
         for region, region_file in regions:
             subbam_file = _select_regions(bam_file, region_file, region)
-            to_run.append((subbam_file, config, region))
+            sub_merged_fq = _merge_fastq(subbam_file)
+            merged_bam_file = _realign_merged(sub_merged_fq, config["ref_file"])
+            to_run.append((merged_bam_file, config, region))
     def by_size((f, c, r)):
         chrom, start, end = r.split("-")
         return int(end) - int(start)
@@ -109,6 +113,30 @@ def _copy_viquas(viquas_dir):
             if os.path.exists(dirname):
                 shutil.rmtree(dirname)
 
+def _merge_fastq(bam_file):
+    """Extract paired end reads and merge using pear.
+    """
+    fq1 = "%s-1.fastq" % os.path.splitext(bam_file)[0]
+    fq2 = "%s-2.fastq" % os.path.splitext(bam_file)[0]
+    if not os.path.exists(fq1) or not os.path.exists(fq2):
+        cmd = ("samtools sort -n -O bam -T {fq1} {bam_file} | "
+               "bedtools bamtofastq -i /dev/stdin -fq {fq1} -fq2 {fq2}")
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    merged_out = "%s.assembled.fastq" % os.path.splitext(bam_file)[0]
+    if not os.path.exists(merged_out):
+        cmd = ["pear", "-f", fq1, "-r", fq2, "-o", os.path.splitext(bam_file)[0]]
+        subprocess.check_call(cmd)
+    return merged_out
+
+def _realign_merged(fq_file, ref_file):
+    """Realign merged reads back to reference genome.
+    """
+    out_file = "%s.bam" % os.path.splitext(fq_file)[0]
+    if not os.path.exists(out_file):
+        cmd = "bwa mem {ref_file} {fq_file} > {out_file}"
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    return out_file
+
 def _select_regions(bam_file, region_file, region):
     """Extracts reads only in regions of interest using bedtools intersect.
     """
@@ -162,8 +190,12 @@ def _subset_ref_file(ref_file, out_dir, region):
 
 def _index_ref_file(ref_file):
     out_file = "%s.fai" % ref_file
-    if not os.path.exists(ref_file):
+    if not os.path.exists(out_file):
         cmd = ["samtools", "faidx", ref_file]
+        subprocess.check_call(cmd)
+    bwa_index = "%s.bwt" % ref_file
+    if not os.path.exists(bwa_index):
+        cmd = ["bwa", "index", ref_file]
         subprocess.check_call(cmd)
     return out_file
 
