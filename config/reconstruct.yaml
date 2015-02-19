@@ -1,3 +1,5 @@
 regions: li_hiv_call3/inputs/regions.bed
 ref_file: li_hiv_call3/inputs/hiv_hxb2.fa
 viquas_dir: ViQuaS1.3
+params:
+  prep: bfc

@@ -4,6 +4,7 @@
 Requires:
   bedtools
   samtools
+  bfc (https://github.com/lh3/bfc)
   pear (http://www.exelixis-lab.org/web/software/pear)
   bwa
   ViQuaS (unpack in work directory)
@@ -33,7 +34,6 @@ import shutil
 import sys
 import subprocess
 
-
 import joblib
 import pyfaidx
 import yaml
@@ -41,14 +41,20 @@ import yaml
 def main(cores, config_file, *bam_files):
     with open(config_file) as in_handle:
         config = yaml.safe_load(in_handle)
-    _index_ref_file(config["ref_file"])
+    fai_file = _index_ref_file(config["ref_file"])
     regions = _subset_region_file(config["regions"])
     to_run = []
     for bam_file in bam_files:
         for region, region_file in regions:
             subbam_file = _select_regions(bam_file, region_file, region)
-            sub_merged_fq = _merge_fastq(subbam_file)
-            merged_bam_file = _realign_merged(sub_merged_fq, config["ref_file"])
+            fq1, fq2 = _prep_fastq(subbam_file)
+            if config["params"]["prep"] == "pear":
+                prep_fq1 = _merge_fastq(fq1, fq2, subbam_file)
+                prep_fq2 = None
+            elif config["params"]["prep"] == "bfc":
+                prep_fq1 = _correct_fastq(fq1, fai_file)
+                prep_fq2 = _correct_fastq(fq2, fai_file)
+            merged_bam_file = _realign_merged(prep_fq1, prep_fq2, config["ref_file"])
             to_run.append((merged_bam_file, config, region))
     def by_size((f, c, r)):
         chrom, start, end = r.split("-")
@@ -66,8 +72,9 @@ def _run_viquas(bam_file, config, region):
     viquas_dir = os.path.join(os.getcwd(), config["viquas_dir"])
     ref_file = os.path.join(os.getcwd(), config["ref_file"])
     # parameter settings for Illumina data from ViQuaS paper
-    o = 5
-    r = 0.7
+    o, r = 5, 0.7
+    # more lenient parameters to improve run time
+    o, r = 3, 0.8
     chrom, start, end = region.split("-")
     size = int(end) - int(start)
     if not os.path.exists(out_file):
@@ -75,7 +82,7 @@ def _run_viquas(bam_file, config, region):
             with _copy_viquas(viquas_dir):
                 cmd = "Rscript ViQuaS.R {ref_file} {bam_file} {o} '' 0 {size}"
                 subprocess.check_call(cmd.format(**locals()), shell=True)
-    return _subset_viquas_file(out_file, region)
+    return _subset_viquas_file(out_file, region, config["ref_file"])
 
 @contextlib.contextmanager
 def _chdir(new_dir):
@@ -113,8 +120,8 @@ def _copy_viquas(viquas_dir):
             if os.path.exists(dirname):
                 shutil.rmtree(dirname)
 
-def _merge_fastq(bam_file):
-    """Extract paired end reads and merge using pear.
+def _prep_fastq(bam_file):
+    """Extract paired end reads.
     """
     fq1 = "%s-1.fastq" % os.path.splitext(bam_file)[0]
     fq2 = "%s-2.fastq" % os.path.splitext(bam_file)[0]
@@ -122,18 +129,38 @@ def _merge_fastq(bam_file):
         cmd = ("samtools sort -n -O bam -T {fq1} {bam_file} | "
                "bedtools bamtofastq -i /dev/stdin -fq {fq1} -fq2 {fq2}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
+    return fq1, fq2
+
+def _correct_fastq(in_file, fai_file):
+    """Error correct input fastq file with bfc.
+    """
+    gsize = 0
+    with open(fai_file) as in_handle:
+        for line in in_handle:
+            gsize += int(line.split()[1])
+    out_file = "%s-corrected%s" % os.path.splitext(in_file)
+    if not os.path.exists(out_file):
+        cmd = "bfc -s {gsize} {in_file} > {out_file}"
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    return out_file
+
+def _merge_fastq(fq1, fq2, bam_file):
+    """Extract paired end reads and merge using pear.
+    """
     merged_out = "%s.assembled.fastq" % os.path.splitext(bam_file)[0]
     if not os.path.exists(merged_out):
         cmd = ["pear", "-f", fq1, "-r", fq2, "-o", os.path.splitext(bam_file)[0]]
         subprocess.check_call(cmd)
     return merged_out
 
-def _realign_merged(fq_file, ref_file):
+def _realign_merged(fq1_file, fq2_file, ref_file):
     """Realign merged reads back to reference genome.
     """
-    out_file = "%s.bam" % os.path.splitext(fq_file)[0]
+    out_file = "%s.bam" % os.path.splitext(fq1_file)[0]
+    if not fq2_file:
+        fq2_file = ""
     if not os.path.exists(out_file):
-        cmd = "bwa mem {ref_file} {fq_file} > {out_file}"
+        cmd = "bwa mem {ref_file} {fq1_file} {fq2_file} | samtools sort - -o {out_file} -O bam -T {out_file}-tmp"
         subprocess.check_call(cmd.format(**locals()), shell=True)
     return out_file
 
@@ -166,7 +193,9 @@ def _subset_region_file(in_file):
 
 # reference management
 
-def _subset_viquas_file(in_file, region):
+def _subset_viquas_file(in_file, region, ref_file):
+    """Subset output file by regions that differ from the reference genome.
+    """
     base, ext = os.path.splitext(in_file)
     out_file = "%s-%s%s" % (base, region, ext)
     chrom, start, end = region.split("-")
