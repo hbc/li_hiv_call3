@@ -34,6 +34,7 @@ import shutil
 import sys
 import subprocess
 
+from Bio import pairwise2
 import joblib
 import pyfaidx
 import yaml
@@ -195,18 +196,44 @@ def _subset_region_file(in_file):
 
 def _subset_viquas_file(in_file, region, ref_file):
     """Subset output file by regions that differ from the reference genome.
+
+    Identify those matching to reference by ends and write regions of
+    difference from reference.
     """
     base, ext = os.path.splitext(in_file)
     out_file = "%s-%s%s" % (base, region, ext)
     chrom, start, end = region.split("-")
     start = int(start) - 1
     end = int(end)
-    if not os.path.exists(out_file):
+    ref_index = pyfaidx.Fasta(ref_file)
+    ref_seq = ref_index[chrom][start:end].seq
+    if not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
         index = pyfaidx.Fasta(in_file)
         with open(out_file, "w") as out_handle:
+            pad = 10
             for recid in index.keys():
-                out_handle.write(repr(index[recid][start:end]) + "\n")
+                cur_seq = index[recid][:].seq
+                cur_start = cur_seq.find(ref_seq[:pad])
+                if cur_start > 0:
+                    cur_end = cur_seq.find(ref_seq[-pad:], cur_start)
+                    if cur_end > 0:
+                        cur_seq = cur_seq[cur_start:cur_end + pad]
+                        cur_align = pairwise2.align.globalms(cur_seq, ref_seq, 1, 0, -1, -0.1,
+                                                             one_alignment_only=True)
+                        match_start, match_end = _find_match_aligns(cur_align[0][0], cur_align[0][1], pad)
+                        rec = index[recid][cur_start + match_start:cur_start + match_end]
+                        out_handle.write(repr(rec) + "\n")
     return out_file
+
+def _find_match_aligns(seq1, seq2, pad):
+    for s_i, char2 in enumerate(seq2):
+        if seq1[s_i] != char2:
+            break
+    seq1_r = list(reversed(list(seq1)))
+    for e_i, char2 in enumerate(reversed(list(seq2))):
+        if seq1_r[e_i] != char2:
+            break
+    return s_i - pad, len(seq1.replace("-", "")) - e_i + pad
 
 def _subset_ref_file(ref_file, out_dir, region):
     chrom, start, end = region.split("-")
