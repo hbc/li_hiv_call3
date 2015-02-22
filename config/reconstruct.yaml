@@ -2,7 +2,12 @@ regions: li_hiv_call3/inputs/regions.bed
 ref_file: li_hiv_call3/inputs/hiv_hxb2.fa
 viquas_dir: ViQuaS1.3
 params:
-  prep: bfc
+  prep: pear
+  pear:
+    quality_thresh: 3
+  viquas:
+    o: 20
+    r: 0.6
 controls:
   IN: li_hiv_call3/inputs/IN-control.fa
   PRO-RT: li_hiv_call3/inputs/PRO-RT-control.fa

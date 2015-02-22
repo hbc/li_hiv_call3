@@ -28,8 +28,11 @@ Library installs:
 Usage:
     reconstruct_populations.py <num_cores> <config_file> [<BAM files>]
 """
+from __future__ import print_function
+import collections
 import contextlib
 import os
+import pprint
 import shutil
 import sys
 import subprocess
@@ -46,25 +49,27 @@ def main(cores, config_file, *bam_files):
     regions = _subset_region_file(config["regions"])
     to_run = []
     for bam_file in bam_files:
-        for region, region_file in regions:
+        for region, name, region_file in regions:
             subbam_file = _select_regions(bam_file, region_file, region)
             fq1, fq2 = _prep_fastq(subbam_file)
             if config["params"]["prep"] == "pear":
-                prep_fq1 = _merge_fastq(fq1, fq2, subbam_file)
+                prep_fq1 = _merge_fastq(fq1, fq2, subbam_file, config)
                 prep_fq2 = None
             elif config["params"]["prep"] == "bfc":
                 prep_fq1 = _correct_fastq(fq1, fai_file)
                 prep_fq2 = _correct_fastq(fq2, fai_file)
+            else:
+                prep_fq1, prep_fq2 = fq1, fq2
             merged_bam_file = _realign_merged(prep_fq1, prep_fq2, config["ref_file"])
-            to_run.append((merged_bam_file, config, region))
-    def by_size((f, c, r)):
+            to_run.append((merged_bam_file, config, region, name))
+    def by_size((f, c, r, n)):
         chrom, start, end = r.split("-")
         return int(end) - int(start)
     to_run.sort(key=by_size)
-    for recon_file in joblib.Parallel(int(cores))(joblib.delayed(_run_viquas)(f, c, r) for f, c, r in to_run):
-        print recon_file
+    for recon_file in joblib.Parallel(int(cores))(joblib.delayed(_run_viquas)(f, c, r, n) for f, c, r, n in to_run):
+        print(recon_file)
 
-def _run_viquas(bam_file, config, region):
+def _run_viquas(bam_file, config, region, region_name):
     out_dir = os.path.join(os.getcwd(), "%s-viquas" % os.path.splitext(bam_file)[0])
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
@@ -73,17 +78,19 @@ def _run_viquas(bam_file, config, region):
     viquas_dir = os.path.join(os.getcwd(), config["viquas_dir"])
     ref_file = os.path.join(os.getcwd(), config["ref_file"])
     # parameter settings for Illumina data from ViQuaS paper
-    o, r = 5, 0.7
-    # more lenient parameters to improve run time
-    o, r = 3, 0.8
+    o = config["params"]["viquas"]["o"]
+    r = config["params"]["viquas"]["r"]
     chrom, start, end = region.split("-")
     size = int(end) - int(start)
     if not os.path.exists(out_file):
         with _chdir(out_dir):
             with _copy_viquas(viquas_dir):
-                cmd = "Rscript ViQuaS.R {ref_file} {bam_file} {o} '' 0 {size}"
+                cmd = "Rscript ViQuaS.R {ref_file} {bam_file} {o} {r} 0 {size}"
                 subprocess.check_call(cmd.format(**locals()), shell=True)
-    return _subset_viquas_file(out_file, region, config["ref_file"])
+    called_file = _subset_viquas_file(out_file, region, config["ref_file"])
+    if _is_control(called_file):
+        _evaluate_control(called_file, config["controls"][region_name])
+    return called_file
 
 @contextlib.contextmanager
 def _chdir(new_dir):
@@ -145,12 +152,13 @@ def _correct_fastq(in_file, fai_file):
         subprocess.check_call(cmd.format(**locals()), shell=True)
     return out_file
 
-def _merge_fastq(fq1, fq2, bam_file):
+def _merge_fastq(fq1, fq2, bam_file, config):
     """Extract paired end reads and merge using pear.
     """
     merged_out = "%s.assembled.fastq" % os.path.splitext(bam_file)[0]
     if not os.path.exists(merged_out):
-        cmd = ["pear", "-f", fq1, "-r", fq2, "-o", os.path.splitext(bam_file)[0]]
+        cmd = ["pear", "-q", str(config["params"]["pear"]["quality_thresh"]),
+               "-f", fq1, "-r", fq2, "-o", os.path.splitext(bam_file)[0]]
         subprocess.check_call(cmd)
     return merged_out
 
@@ -184,12 +192,12 @@ def _subset_region_file(in_file):
     out = []
     with open(in_file) as in_handle:
         for line in in_handle:
-            chrom, start, end = line.strip().split("\t")[:3]
+            chrom, start, end, name = line.strip().split("\t")[:4]
             base, ext = os.path.splitext(os.path.basename(in_file))
             out_file = os.path.join(out_dir, "%s-%s-%s-%s%s" % (base, chrom, start, end, ext))
             with open(out_file, "w") as out_handle:
                 out_handle.write(line)
-            out.append(("%s-%s-%s" % (chrom, start, end), out_file))
+            out.append(("%s-%s-%s" % (chrom, start, end), name, out_file))
     return out
 
 # reference management
@@ -200,29 +208,40 @@ def _subset_viquas_file(in_file, region, ref_file):
     Identify those matching to reference by ends and write regions of
     difference from reference.
     """
+    pad = 15
+    end_buffer = 100
     base, ext = os.path.splitext(in_file)
     out_file = "%s-%s%s" % (base, region, ext)
+    out_file_bad = "%s-nomatch%s" % os.path.splitext(out_file)
     chrom, start, end = region.split("-")
-    start = int(start) - 1
-    end = int(end)
+    orig_start = int(start) - 1
+    orig_end = int(end)
+    start = orig_start - end_buffer
+    end = orig_end + end_buffer
     ref_index = pyfaidx.Fasta(ref_file)
     ref_seq = ref_index[chrom][start:end].seq
     if not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
         index = pyfaidx.Fasta(in_file)
         with open(out_file, "w") as out_handle:
-            pad = 10
-            for recid in index.keys():
-                cur_seq = index[recid][:].seq
-                cur_start = cur_seq.find(ref_seq[:pad])
-                if cur_start > 0:
-                    cur_end = cur_seq.find(ref_seq[-pad:], cur_start)
-                    if cur_end > 0:
-                        cur_seq = cur_seq[cur_start:cur_end + pad]
-                        cur_align = pairwise2.align.globalms(cur_seq, ref_seq, 1, 0, -1, -0.1,
-                                                             one_alignment_only=True)
-                        match_start, match_end = _find_match_aligns(cur_align[0][0], cur_align[0][1], pad)
-                        rec = index[recid][cur_start + match_start:cur_start + match_end]
-                        out_handle.write(repr(rec) + "\n")
+            with open(out_file_bad, "w") as out_handle_bad:
+                for recid in index.keys():
+                    cur_seq = index[recid][:].seq
+                    cur_start = cur_seq.find(ref_seq[:pad])
+                    added = False
+                    if cur_start > 0:
+                        cur_end = cur_seq.find(ref_seq[-pad:], cur_start)
+                        if cur_end > 0:
+                            added = True
+                            cur_seq = cur_seq[cur_start:cur_end + pad]
+                            cur_align = pairwise2.align.globalms(cur_seq, ref_seq, 1, 0, -1, -0.1,
+                                                                 one_alignment_only=True)
+                            match_start, match_end = _find_match_aligns(cur_align[0][0], cur_align[0][1], pad)
+                            final_start = match_start + cur_start
+                            final_end = match_end + cur_start
+                            rec = index[recid][final_start:final_end]
+                            out_handle.write(repr(rec) + "\n")
+                    if not added:
+                        out_handle_bad.write(repr(index[recid][orig_start:orig_end]) + "\n")
     return out_file
 
 def _find_match_aligns(seq1, seq2, pad):
@@ -254,6 +273,58 @@ def _index_ref_file(ref_file):
         cmd = ["bwa", "index", ref_file]
         subprocess.check_call(cmd)
     return out_file
+
+# control library evaluation
+
+def _is_control(hap_file):
+    base = os.path.basename(os.path.dirname(hap_file))
+    return base.startswith(("1_", "2_")) or "Control" in base
+
+def _evaluate_control(hap_file, ref_file):
+    thresh = 0.9
+    thresh_span = 0.7
+    hap_file = os.path.relpath(hap_file, os.getcwd())
+    cmd = ["ssearch36", hap_file, ref_file, "-d", "1", "-m", "9i", "-m", "4"]
+    output = subprocess.check_output(cmd)
+    cur_query = None
+    query_length = None
+    in_best = False
+    results = []
+    for line in output.split("\n"):
+        if line.strip().startswith("%s>>>" % (len(results) + 1)):
+            parts = line.split(" - ")
+            cur_query = parts[0].strip().split(">>>")[1]
+            if len(parts) > 1:
+                query_length = float(parts[1].split()[-2].strip())
+        elif cur_query and line.startswith("The best scores are:"):
+            in_best = True
+        elif cur_query and in_best:
+            if not line:
+                print("Did not find match for", cur_query)
+                in_best = False
+                cur_query = None
+                raise NotImplementedError
+            else:
+                info = line.split()
+                hit = info[0]
+                match_pct = float(info[-3])
+                span_pct = float(info[-1]) / query_length
+                if span_pct > 1.1:
+                    print(query_length, line)
+                    raise NotImplementedError
+                if span_pct > thresh_span:
+                    if match_pct > thresh:
+                        results.append((cur_query, hit, match_pct, span_pct))
+                        in_best = False
+                        cur_query = None
+    ctl_sum = collections.defaultdict(float)
+    eval_file = "%s-eval.txt" % os.path.splitext(hap_file)[0]
+    with open(eval_file, "w") as eval_handle:
+        for orig, match, match_pct, span_pct in results:
+            print(orig, match, match_pct, span_pct, file=eval_handle)
+            _, freq = orig.split(":")[0].split("_")
+            ctl_sum[match] += float(freq)
+        pprint.pprint(dict(ctl_sum), stream=eval_handle)
 
 if __name__ == "__main__":
     main(*sys.argv[1:])
