@@ -3,3 +3,7 @@ ref_file: li_hiv_call3/inputs/hiv_hxb2.fa
 viquas_dir: ViQuaS1.3
 params:
   prep: bfc
+controls:
+  IN: li_hiv_call3/inputs/IN-control.fa
+  PRO-RT: li_hiv_call3/inputs/PRO-RT-control.fa
+  V3_Loop: li_hiv_call3/inputs/V3_Loop-control.fa
