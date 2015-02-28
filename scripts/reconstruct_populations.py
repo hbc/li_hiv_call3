@@ -51,15 +51,14 @@ def main(cores, config_file, *bam_files):
     for bam_file in bam_files:
         for region, name, region_file in regions:
             subbam_file = _select_regions(bam_file, region_file, region)
-            fq1, fq2 = _prep_fastq(subbam_file)
-            if config["params"]["prep"] == "pear":
-                prep_fq1 = _merge_fastq(fq1, fq2, subbam_file, config)
+            prep_fq1, prep_fq2 = _prep_fastq(subbam_file)
+            if "bfc" in config["params"]["prep"]:
+                corr_fq1 = _correct_fastq(prep_fq1, fai_file, config)
+                corr_fq2 = _correct_fastq(prep_fq2, fai_file, config)
+                prep_fq1, prep_fq2 = _ensure_pairs(corr_fq1, corr_fq2)
+            if "pear" in config["params"]["prep"]:
+                prep_fq1 = _merge_fastq(prep_fq1, prep_fq2, subbam_file, config)
                 prep_fq2 = None
-            elif config["params"]["prep"] == "bfc":
-                prep_fq1 = _correct_fastq(fq1, fai_file)
-                prep_fq2 = _correct_fastq(fq2, fai_file)
-            else:
-                prep_fq1, prep_fq2 = fq1, fq2
             merged_bam_file = _realign_merged(prep_fq1, prep_fq2, config["ref_file"])
             to_run.append((merged_bam_file, config, region, name))
     def by_size((f, c, r, n)):
@@ -139,7 +138,7 @@ def _prep_fastq(bam_file):
         subprocess.check_call(cmd.format(**locals()), shell=True)
     return fq1, fq2
 
-def _correct_fastq(in_file, fai_file):
+def _correct_fastq(in_file, fai_file, config):
     """Error correct input fastq file with bfc.
     """
     gsize = 0
@@ -147,10 +146,29 @@ def _correct_fastq(in_file, fai_file):
         for line in in_handle:
             gsize += int(line.split()[1])
     out_file = "%s-corrected%s" % os.path.splitext(in_file)
+    min_kmer_cov = config["params"]["bfc"]["min_kmer_cov"]
     if not os.path.exists(out_file):
-        cmd = "bfc -s {gsize} {in_file} > {out_file}"
+        cmd = "bfc -s {gsize} -E -1 -c {min_kmer_cov} {in_file} > {out_file}"
         subprocess.check_call(cmd.format(**locals()), shell=True)
     return out_file
+
+def _ensure_pairs(f1, f2):
+    """Ensure only pairs are retained with both ends.
+    """
+    out_files = []
+    for filter_f, cmp_f, new_ext, orig_ext in [(f1, f2, "/1", "/2"), (f2, f1, "/2", "/1")]:
+        out_file = "%s-wboth%s" % os.path.splitext(filter_f)
+        if not os.path.exists(out_file):
+            keep_file = "%s-names.txt" % os.path.splitext(out_file)[0]
+            with open(cmp_f) as in_handle:
+                with open(keep_file, "w") as out_handle:
+                    for line in in_handle:
+                        if line.startswith("@"):
+                            out_handle.write(line[1:].replace(orig_ext, new_ext))
+            cmd = "seqtk subseq {filter_f} {keep_file} > {out_file}"
+            subprocess.check_call(cmd.format(**locals()), shell=True)
+        out_files.append(out_file)
+    return out_files
 
 def _merge_fastq(fq1, fq2, bam_file, config):
     """Extract paired end reads and merge using pear.
