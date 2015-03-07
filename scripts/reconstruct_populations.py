@@ -31,8 +31,10 @@ Usage:
 from __future__ import print_function
 import collections
 import contextlib
+import itertools
 import os
 import pprint
+import re
 import shutil
 import sys
 import subprocess
@@ -50,16 +52,17 @@ def main(cores, config_file, *bam_files):
     to_run = []
     for bam_file in bam_files:
         for region, name, region_file in regions:
-            subbam_file = _select_regions(bam_file, region_file, region)
-            prep_fq1, prep_fq2 = _prep_fastq(subbam_file)
+            prep_fq1, prep_fq2 = _select_fastq_in_region(bam_file, region, region_file)
             if "bfc" in config["params"]["prep"]:
                 corr_fq1 = _correct_fastq(prep_fq1, fai_file, config)
                 corr_fq2 = _correct_fastq(prep_fq2, fai_file, config)
                 prep_fq1, prep_fq2 = _ensure_pairs(corr_fq1, corr_fq2)
             if "pear" in config["params"]["prep"]:
-                prep_fq1 = _merge_fastq(prep_fq1, prep_fq2, subbam_file, config)
+                _check_pair_overlap(prep_fq1, prep_fq2, config["ref_file"])
+                prep_fq1 = _merge_fastq(prep_fq1, prep_fq2, config)
                 prep_fq2 = None
             merged_bam_file = _realign_merged(prep_fq1, prep_fq2, config["ref_file"])
+            _plot_coverage(merged_bam_file)
             to_run.append((merged_bam_file, config, region, name))
     def by_size((f, c, r, n)):
         chrom, start, end = r.split("-")
@@ -88,7 +91,7 @@ def _run_viquas(bam_file, config, region, region_name):
                 subprocess.check_call(cmd.format(**locals()), shell=True)
     called_file = _subset_viquas_file(out_file, region, config["ref_file"])
     if _is_control(called_file):
-        _evaluate_control(called_file, config["controls"][region_name])
+        _evaluate_control(called_file, config["controls"][re.split("_\d+", region_name)[0]])
     return called_file
 
 @contextlib.contextmanager
@@ -127,17 +130,6 @@ def _copy_viquas(viquas_dir):
             if os.path.exists(dirname):
                 shutil.rmtree(dirname)
 
-def _prep_fastq(bam_file):
-    """Extract paired end reads.
-    """
-    fq1 = "%s-1.fastq" % os.path.splitext(bam_file)[0]
-    fq2 = "%s-2.fastq" % os.path.splitext(bam_file)[0]
-    if not os.path.exists(fq1) or not os.path.exists(fq2):
-        cmd = ("samtools sort -n -O bam -T {fq1} {bam_file} | "
-               "bedtools bamtofastq -i /dev/stdin -fq {fq1} -fq2 {fq2}")
-        subprocess.check_call(cmd.format(**locals()), shell=True)
-    return fq1, fq2
-
 def _correct_fastq(in_file, fai_file, config):
     """Error correct input fastq file with bfc.
     """
@@ -170,15 +162,72 @@ def _ensure_pairs(f1, f2):
         out_files.append(out_file)
     return out_files
 
-def _merge_fastq(fq1, fq2, bam_file, config):
+def _merge_fastq(fq1, fq2, config):
     """Extract paired end reads and merge using pear.
     """
-    merged_out = "%s.assembled.fastq" % os.path.splitext(bam_file)[0]
+    base_out = os.path.splitext(fq1)[0].replace("-1", "-pear")
+    merged_out = "%s.assembled.fastq" % base_out
     if not os.path.exists(merged_out):
         cmd = ["pear", "-q", str(config["params"]["pear"]["quality_thresh"]),
-               "-f", fq1, "-r", fq2, "-o", os.path.splitext(bam_file)[0]]
+               "-v", str(config["params"]["pear"]["min_overlap"]),
+               "-t", str(config["params"]["pear"]["min_trim_length"]),
+               "-u", str(config["params"]["pear"]["max_uncalled_base"]),
+               "-f", fq1, "-r", fq2, "-o", base_out]
         subprocess.check_call(cmd)
     return merged_out
+
+def _check_pair_overlap(fq1_file, fq2_file, ref_file):
+    """Ensure that pairs of fastq files overlap
+    """
+    import pysam
+    import matplotlib.pyplot as plt
+    check_file = "%s-check_ol.bam" % (fq1_file)
+    if not os.path.exists(check_file):
+        cmd = ("bwa mem -M {ref_file} {fq1_file} {fq2_file} | "
+               "samtools sort - -n -o {check_file} -O bam -T {check_file}-tmp")
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    overlaps = 0
+    total = 0
+    starts = collections.defaultdict(int)
+    ends = collections.defaultdict(int)
+    with pysam.Samfile(check_file) as in_bam:
+        for _, pair in itertools.groupby(in_bam, key=lambda x: x.query_name):
+            coords = []
+            for r in pair:
+                if not r.is_secondary and not r.is_unmapped:
+                    coords.append((r.reference_start, r.reference_end))
+            total += 1
+            if len(coords) == 2:
+                if len(set(range(*coords[0])) & set(range(*coords[1]))) > 50:
+                    overlaps += 1
+                    starts[min([x[0] for x in coords])] += 1
+                    ends[max([x[1] for x in coords])] += 1
+    print(overlaps, total, "%.1f%%" % (float(overlaps) / total * 100.0))
+    starts = sorted(list(starts.items()))
+    ends = sorted(list(ends.items()))
+    plt.clf()
+    plt.plot([x[0] for x in starts], [x[1] for x in starts], [x[0] for x in ends], [x[1] for x in ends])
+    plt.savefig("%s.png" % os.path.splitext(check_file)[0])
+
+def _plot_coverage(bam_file):
+    """Simple coverage plot for an input BAM file.
+    """
+    import pysam
+    import matplotlib.pyplot as plt
+    out_file = "%s-coverage.pdf" % os.path.splitext(bam_file)[0]
+    if not os.path.exists(out_file):
+        if not os.path.exists(bam_file + ".bai"):
+            subprocess.check_call(["samtools", "index", bam_file])
+        x, y = [], []
+        with pysam.Samfile(bam_file) as in_bam:
+            for pileup in in_bam.pileup(max_depth=1e6):
+                if pileup.nsegments > 10:
+                    x.append(pileup.reference_pos)
+                    y.append(pileup.nsegments)
+        plt.clf()
+        plt.plot(x, y)
+        plt.savefig(out_file)
+    return out_file
 
 def _realign_merged(fq1_file, fq2_file, ref_file):
     """Realign merged reads back to reference genome.
@@ -191,15 +240,36 @@ def _realign_merged(fq1_file, fq2_file, ref_file):
         subprocess.check_call(cmd.format(**locals()), shell=True)
     return out_file
 
-def _select_regions(bam_file, region_file, region):
-    """Extracts reads only in regions of interest using bedtools intersect.
+def _select_fastq_in_region(bam_file, region, region_file):
+    """Extract paired end reads where either read overlaps the region of interest.
     """
     base, ext = os.path.splitext(bam_file)
-    out_file = "%s-%s%s" % (base, region, ext)
-    if not os.path.exists(out_file):
-        cmd = "bedtools intersect -abam {bam_file} -b {region_file} -f 1.0 > {out_file}"
+    full_fq1 = "%s-1.fastq" % base
+    full_fq2 = "%s-2.fastq" % base
+    if not os.path.exists(full_fq1):
+        cmd = ("samtools sort -n -O bam -T {full_fq1} {bam_file} | "
+               "bedtools bamtofastq -i /dev/stdin -fq {full_fq1} -fq2 {full_fq2}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
-    return out_file
+
+    chrom, start, end = region.split("-")
+    fq1 = "%s-%s-1.fastq" % (base, region)
+    fq2 = "%s-%s-2.fastq" % (base, region)
+    name_file = "%s-%s-names.txt" % (base, region)
+    keep_file = "%s-keep%s" % os.path.splitext(name_file)
+    if not os.path.exists(keep_file):
+        cmd = ("bedtools intersect -abam {bam_file} -b {region_file} -f 1.0 | samtools view - "
+               "| cut -f 1 > {name_file}")
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+        with open(name_file) as in_handle:
+            with open(keep_file, "w") as out_handle:
+                for line in in_handle:
+                    out_handle.write("%s/1\n" % line.strip())
+                    out_handle.write("%s/2\n" % line.strip())
+    for orig_file, out_file in [(full_fq1, fq1), (full_fq2, fq2)]:
+        if not os.path.exists(out_file):
+            cmd = "seqtk subseq {orig_file} {keep_file} > {out_file}"
+            subprocess.check_call(cmd.format(**locals()), shell=True)
+    return [fq1, fq2]
 
 def _subset_region_file(in_file):
     """Subset a BED file into individual regions to be analyzed separately.

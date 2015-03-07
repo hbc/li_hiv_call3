@@ -2,9 +2,12 @@ regions: li_hiv_call3/inputs/regions.bed
 ref_file: li_hiv_call3/inputs/hiv_hxb2.fa
 viquas_dir: ViQuaS1.3
 params:
-  prep: [bfc, pear]
+  prep: pear
   pear:
     quality_thresh: 3
+    min_overlap: 50
+    min_trim_length: 50
+    max_uncalled_base: 0
   bfc:
     min_kmer_cov: 5
   viquas:
@@ -13,4 +16,14 @@ params:
 controls:
   IN: li_hiv_call3/inputs/IN-control.fa
   PRO-RT: li_hiv_call3/inputs/PRO-RT-control.fa
-  V3_Loop: li_hiv_call3/inputs/V3_Loop-control.fa
+  V3-Loop: li_hiv_call3/inputs/V3_Loop-control.fa
+
+#HIVHXB2CG	2064	2700	PRO-RT_1
+#HIVHXB2CG	2700	3250	PRO-RT_2
+#HIVHXB2CG	3250	3800	PRO-RT_3
+#HIVHXB2CG	4312	4800	IN_1
+#HIVHXB2CG	4800	5189	IN_2
+#
+#HIVHXB2CG	2064	3800	PRO-RT
+#HIVHXB2CG	4312	5189	IN
+#HIVHXB2CG	6906	7314	V3-Loop
