@@ -65,8 +65,7 @@ def main(cores, config_file, *bam_files):
             _plot_coverage(merged_bam_file)
             to_run.append((merged_bam_file, config, region, name))
     def by_size((f, c, r, n)):
-        chrom, start, end = r.split("-")
-        return int(end) - int(start)
+        return os.path.getsize(f)
     to_run.sort(key=by_size)
     for recon_file in joblib.Parallel(int(cores))(joblib.delayed(_run_viquas)(f, c, r, n) for f, c, r, n in to_run):
         print(recon_file)
@@ -79,7 +78,6 @@ def _run_viquas(bam_file, config, region, region_name):
     bam_file = os.path.join(os.getcwd(), bam_file)
     viquas_dir = os.path.join(os.getcwd(), config["viquas_dir"])
     ref_file = os.path.join(os.getcwd(), config["ref_file"])
-    # parameter settings for Illumina data from ViQuaS paper
     o = config["params"]["viquas"]["o"]
     r = config["params"]["viquas"]["r"]
     chrom, start, end = region.split("-")
@@ -105,17 +103,33 @@ def _chdir(new_dir):
     finally:
         os.chdir(cur_dir)
 
+def _fix_r_parsing(line):
+    """Fix parsing of the 'r' parameter to ensure it handles floats.
+    """
+    if line.startswith("r = as."):
+        return "r = as.numeric(ip[4])\n"
+    else:
+        return line
+
 @contextlib.contextmanager
 def _copy_viquas(viquas_dir):
     """ViQuaS requires running within the install directory.
     This copies it into the current directory so multiple instances can be
     run simultaneously.
     """
+    patch_fns = {"ViQuaS.R": _fix_r_parsing}
     files = ["ViQuaS.R"]
     dirs = ["tools", "viquas_files"]
     for fname in files:
-        if not os.path.exists(fname):
-            shutil.copy(os.path.join(viquas_dir, fname), os.path.join(os.getcwd(), fname))
+        orig_file = os.path.join(viquas_dir, fname)
+        out_file = os.path.join(os.getcwd(), fname)
+        if not os.path.exists(out_file):
+            with open(out_file, "w") as out_handle:
+                with open(orig_file) as in_handle:
+                    for line in in_handle:
+                        if fname in patch_fns:
+                            line = _fix_r_parsing(line)
+                        out_handle.write(line)
     for dirname in dirs:
         if not os.path.exists(dirname):
             shutil.copytree(os.path.join(viquas_dir, dirname),
