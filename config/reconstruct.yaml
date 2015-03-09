@@ -7,11 +7,11 @@ params:
     quality_thresh: 3
     min_overlap: 50
     min_trim_length: 50
-    max_uncalled_base: 0
+    max_uncalled_base: 1
   bfc:
     min_kmer_cov: 5
   viquas:
-    o: 15
+    o: 5
     r: 0.6
 controls:
   IN: li_hiv_call3/inputs/IN-control.fa

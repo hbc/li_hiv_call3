@@ -51,6 +51,7 @@ def main(cores, config_file, *bam_files):
     regions = _subset_region_file(config["regions"])
     to_run = []
     for bam_file in bam_files:
+        _test_freebayes_calls(bam_file, config["ref_file"], config["regions"], config)
         for region, name, region_file in regions:
             prep_fq1, prep_fq2 = _select_fastq_in_region(bam_file, region, region_file)
             if "bfc" in config["params"]["prep"]:
@@ -58,10 +59,10 @@ def main(cores, config_file, *bam_files):
                 corr_fq2 = _correct_fastq(prep_fq2, fai_file, config)
                 prep_fq1, prep_fq2 = _ensure_pairs(corr_fq1, corr_fq2)
             if "pear" in config["params"]["prep"]:
-                _check_pair_overlap(prep_fq1, prep_fq2, config["ref_file"])
+                _check_pair_overlap(prep_fq1, prep_fq2, config["ref_file"], config)
                 prep_fq1 = _merge_fastq(prep_fq1, prep_fq2, config)
                 prep_fq2 = None
-            merged_bam_file = _realign_merged(prep_fq1, prep_fq2, config["ref_file"])
+            merged_bam_file = _realign_merged(prep_fq1, prep_fq2, region_file, config["ref_file"])
             _plot_coverage(merged_bam_file)
             to_run.append((merged_bam_file, config, region, name))
     def by_size((f, c, r, n)):
@@ -176,6 +177,12 @@ def _ensure_pairs(f1, f2):
         out_files.append(out_file)
     return out_files
 
+def _test_freebayes_calls(bam_file, ref_file, region_file, config):
+    full_fq1, full_fq2 = _select_full_fastqs(bam_file)
+    full_merged = _merge_fastq(full_fq1, full_fq2, config)
+    full_bam = _realign_merged(full_merged, None, None, ref_file)
+    print(full_bam)
+
 def _merge_fastq(fq1, fq2, config):
     """Extract paired end reads and merge using pear.
     """
@@ -190,7 +197,7 @@ def _merge_fastq(fq1, fq2, config):
         subprocess.check_call(cmd)
     return merged_out
 
-def _check_pair_overlap(fq1_file, fq2_file, ref_file):
+def _check_pair_overlap(fq1_file, fq2_file, ref_file, config):
     """Ensure that pairs of fastq files overlap
     """
     import pysam
@@ -212,7 +219,7 @@ def _check_pair_overlap(fq1_file, fq2_file, ref_file):
                     coords.append((r.reference_start, r.reference_end))
             total += 1
             if len(coords) == 2:
-                if len(set(range(*coords[0])) & set(range(*coords[1]))) > 50:
+                if len(set(range(*coords[0])) & set(range(*coords[1]))) > config["params"]["pear"]["min_overlap"]:
                     overlaps += 1
                     starts[min([x[0] for x in coords])] += 1
                     ends[max([x[1] for x in coords])] += 1
@@ -243,27 +250,41 @@ def _plot_coverage(bam_file):
         plt.savefig(out_file)
     return out_file
 
-def _realign_merged(fq1_file, fq2_file, ref_file):
+def _realign_merged(fq1_file, fq2_file, region_file, ref_file):
     """Realign merged reads back to reference genome.
     """
     out_file = "%s.bam" % os.path.splitext(fq1_file)[0]
     if not fq2_file:
         fq2_file = ""
+    if region_file:
+        region_cmd = " | bedtools intersect -abam /dev/stdin -b %s" % region_file
+    else:
+        region_cmd = ""
     if not os.path.exists(out_file):
-        cmd = "bwa mem {ref_file} {fq1_file} {fq2_file} | samtools sort - -o {out_file} -O bam -T {out_file}-tmp"
+        cmd = ("bwa mem {ref_file} {fq1_file} {fq2_file} | "
+               "samtools sort - -O bam -T {out_file}-tmp " +
+               region_cmd +
+               " > {out_file}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
+    if not os.path.exists(out_file + ".bai"):
+        subprocess.check_call(["samtools", "index", out_file])
     return out_file
 
-def _select_fastq_in_region(bam_file, region, region_file):
-    """Extract paired end reads where either read overlaps the region of interest.
-    """
+def _select_full_fastqs(bam_file):
     base, ext = os.path.splitext(bam_file)
     full_fq1 = "%s-1.fastq" % base
     full_fq2 = "%s-2.fastq" % base
     if not os.path.exists(full_fq1):
-        cmd = ("samtools sort -n -O bam -T {full_fq1} {bam_file} | "
+        cmd = ("samtools view -u -f 0x2 {bam_file} | samtools sort -n -O bam -T {full_fq1} - | "
                "bedtools bamtofastq -i /dev/stdin -fq {full_fq1} -fq2 {full_fq2}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
+    return full_fq1, full_fq2
+
+def _select_fastq_in_region(bam_file, region, region_file):
+    """Extract paired end reads where either read overlaps the region of interest.
+    """
+    full_fq1, full_fq2 = _select_full_fastqs(bam_file)
+    base, ext = os.path.splitext(bam_file)
 
     chrom, start, end = region.split("-")
     fq1 = "%s-%s-1.fastq" % (base, region)
@@ -271,8 +292,8 @@ def _select_fastq_in_region(bam_file, region, region_file):
     name_file = "%s-%s-names.txt" % (base, region)
     keep_file = "%s-keep%s" % os.path.splitext(name_file)
     if not os.path.exists(keep_file):
-        cmd = ("bedtools intersect -abam {bam_file} -b {region_file} -f 1.0 | samtools view - "
-               "| cut -f 1 > {name_file}")
+        cmd = ("bedtools intersect -abam {bam_file} -b {region_file} | samtools view - "
+               "| cut -f 1 | sort | uniq > {name_file}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
         with open(name_file) as in_handle:
             with open(keep_file, "w") as out_handle:
@@ -337,7 +358,8 @@ def _subset_viquas_file(in_file, region, ref_file):
                             cur_seq = cur_seq[cur_start:cur_end + pad]
                             cur_align = pairwise2.align.globalms(cur_seq, ref_seq, 1, 0, -1, -0.1,
                                                                  one_alignment_only=True)
-                            match_start, match_end = _find_match_aligns(cur_align[0][0], cur_align[0][1], pad)
+                            match_start, match_end = _find_match_aligns(cur_align[0][0], cur_align[0][1], pad,
+                                                                        end_buffer)
                             final_start = match_start + cur_start
                             final_end = match_end + cur_start
                             rec = index[recid][final_start:final_end]
@@ -346,14 +368,17 @@ def _subset_viquas_file(in_file, region, ref_file):
                         out_handle_bad.write(repr(index[recid][orig_start:orig_end]) + "\n")
     return out_file
 
-def _find_match_aligns(seq1, seq2, pad):
+def _find_match_aligns(seq1, seq2, pad, end_buffer):
+    min_ends = end_buffer + pad * 2
     for s_i, char2 in enumerate(seq2):
-        if seq1[s_i] != char2:
-            break
+        if s_i > min_ends:
+            if seq1[s_i] != char2:
+                break
     seq1_r = list(reversed(list(seq1)))
     for e_i, char2 in enumerate(reversed(list(seq2))):
-        if seq1_r[e_i] != char2:
-            break
+        if e_i > min_ends:
+            if seq1_r[e_i] != char2:
+                break
     return s_i - pad, len(seq1.replace("-", "")) - e_i + pad
 
 def _subset_ref_file(ref_file, out_dir, region):
@@ -405,7 +430,6 @@ def _evaluate_control(hap_file, ref_file):
                 print("Did not find match for", cur_query)
                 in_best = False
                 cur_query = None
-                raise NotImplementedError
             else:
                 info = line.split()
                 hit = info[0]
