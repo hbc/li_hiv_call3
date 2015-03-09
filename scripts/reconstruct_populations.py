@@ -47,29 +47,33 @@ import yaml
 def main(cores, config_file, *bam_files):
     with open(config_file) as in_handle:
         config = yaml.safe_load(in_handle)
-    fai_file = _index_ref_file(config["ref_file"])
     regions = _subset_region_file(config["regions"])
-    to_run = []
+    to_prep = []
     for bam_file in bam_files:
         _test_freebayes_calls(bam_file, config["ref_file"], config["regions"], config)
         for region, name, region_file in regions:
-            prep_fq1, prep_fq2 = _select_fastq_in_region(bam_file, region, region_file)
-            if "bfc" in config["params"]["prep"]:
-                corr_fq1 = _correct_fastq(prep_fq1, fai_file, config)
-                corr_fq2 = _correct_fastq(prep_fq2, fai_file, config)
-                prep_fq1, prep_fq2 = _ensure_pairs(corr_fq1, corr_fq2)
-            if "pear" in config["params"]["prep"]:
-                _check_pair_overlap(prep_fq1, prep_fq2, config["ref_file"], config)
-                prep_fq1 = _merge_fastq(prep_fq1, prep_fq2, config)
-                prep_fq2 = None
-            merged_bam_file = _realign_merged(prep_fq1, prep_fq2, region_file, config["ref_file"])
-            _plot_coverage(merged_bam_file)
-            to_run.append((merged_bam_file, config, region, name))
+            to_prep.append((bam_file, region, name, region_file, config))
+    to_run = joblib.Parallel(int(cores))(joblib.delayed(_run_prep)(*args) for args in to_prep)
     def by_size((f, c, r, n)):
         return os.path.getsize(f)
     to_run.sort(key=by_size)
     for recon_file in joblib.Parallel(int(cores))(joblib.delayed(_run_viquas)(f, c, r, n) for f, c, r, n in to_run):
         print(recon_file)
+
+def _run_prep(bam_file, region, name, region_file, config):
+    fai_file = _index_ref_file(config["ref_file"])
+    prep_fq1, prep_fq2 = _select_fastq_in_region(bam_file, region, region_file)
+    if "bfc" in config["params"]["prep"]:
+        corr_fq1 = _correct_fastq(prep_fq1, fai_file, config)
+        corr_fq2 = _correct_fastq(prep_fq2, fai_file, config)
+        prep_fq1, prep_fq2 = _ensure_pairs(corr_fq1, corr_fq2)
+    if "pear" in config["params"]["prep"]:
+        _check_pair_overlap(prep_fq1, prep_fq2, config["ref_file"], config)
+        prep_fq1 = _merge_fastq(prep_fq1, prep_fq2, config)
+        prep_fq2 = None
+    merged_bam_file = _realign_merged(prep_fq1, prep_fq2, region_file, config["ref_file"])
+    _plot_coverage(merged_bam_file)
+    return (merged_bam_file, config, region, name)
 
 def _run_viquas(bam_file, config, region, region_name):
     out_dir = os.path.join(os.getcwd(), "%s-viquas" % os.path.splitext(bam_file)[0])
