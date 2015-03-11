@@ -39,9 +39,11 @@ import shutil
 import sys
 import subprocess
 
-from Bio import pairwise2
+from Bio import pairwise2, SeqIO
 import joblib
+import numpy
 import pyfaidx
+import pysam
 import yaml
 
 def main(cores, config_file, *bam_files):
@@ -49,16 +51,20 @@ def main(cores, config_file, *bam_files):
         config = yaml.safe_load(in_handle)
     regions = _subset_region_file(config["regions"])
     to_prep = []
+    to_call = []
     for bam_file in bam_files:
-        _test_freebayes_calls(bam_file, config["ref_file"], config["regions"], config)
+        to_call.append((bam_file, config["ref_file"], config["regions"], config))
         for region, name, region_file in regions:
             to_prep.append((bam_file, region, name, region_file, config))
-    to_run = joblib.Parallel(int(cores))(joblib.delayed(_run_prep)(*args) for args in to_prep)
-    def by_size((f, c, r, n)):
-        return os.path.getsize(f)
-    to_run.sort(key=by_size)
-    for recon_file in joblib.Parallel(int(cores))(joblib.delayed(_run_viquas)(f, c, r, n) for f, c, r, n in to_run):
-        print(recon_file)
+    if config["params"]["caller"] == "freebayes":
+        called = joblib.Parallel(int(cores))(joblib.delayed(_freebayes_calls)(*args) for args in to_call)
+    else:
+        to_run = joblib.Parallel(int(cores))(joblib.delayed(_run_prep)(*args) for args in to_prep)
+        def by_size((f, c, r, n)):
+            return os.path.getsize(f)
+        to_run.sort(key=by_size)
+        for recon_file in joblib.Parallel(int(cores))(joblib.delayed(_run_viquas)(f, c, r, n) for f, c, r, n in to_run):
+            print(recon_file)
 
 def _run_prep(bam_file, region, name, region_file, config):
     fai_file = _index_ref_file(config["ref_file"])
@@ -181,11 +187,85 @@ def _ensure_pairs(f1, f2):
         out_files.append(out_file)
     return out_files
 
-def _test_freebayes_calls(bam_file, ref_file, region_file, config):
+def _freebayes_calls(bam_file, ref_file, region_file, config):
+    """Merge and call haplotype variants with FreeBayes.
+    """
     full_fq1, full_fq2 = _select_full_fastqs(bam_file)
     full_merged = _merge_fastq(full_fq1, full_fq2, config)
     full_bam = _realign_merged(full_merged, None, None, ref_file)
-    print(full_bam)
+    vcf_file = _freebayes_call(full_bam, ref_file, region_file)
+    print(vcf_file)
+    if "Control" in vcf_file:
+        _summarize_calls(vcf_file, region_file, config)
+
+def _get_control_file(in_chrom, in_pos, region_file, config):
+    with open(region_file) as in_handle:
+        for line in in_handle:
+            chrom, start, end, name = line.rstrip().split("\t")
+            if in_chrom == chrom and in_pos >= int(start) and in_pos < int(end):
+                return name, config["controls"][name]
+    raise ValueError("Did not find control for %s %s" % (in_chrom, in_pos))
+
+def _summarize_calls(vcf_file, region_file, config):
+    evals = {"tps": collections.defaultdict(int),
+             "fps": collections.defaultdict(int),
+             "wrongfreq": collections.defaultdict(int)}
+    sizes = []
+    with pysam.VariantFile(vcf_file) as in_vcf:
+        for rec in in_vcf:
+            freqs = [float(x) / float(rec.info["DP"]) * 100.0 for x in
+                     (rec.info["AO"] if isinstance(rec.info["AO"], (list, tuple)) else [rec.info["AO"]])]
+            allele_freqs = [(a, f) for f, a in sorted(zip(freqs, rec.alts), reverse=True)]
+            if len(allele_freqs[0][0]) > 10:
+                sizes.append(len(allele_freqs[0][0]))
+                evals = _check_haplotype_matches(evals, rec.chrom, rec.start, allele_freqs, region_file, config)
+    pprint.pprint(dict(evals["tps"]))
+    pprint.pprint(dict(evals["fps"]))
+    pprint.pprint(dict(evals["wrongfreq"]))
+    print("True positives")
+    _print_eval_summary(dict(evals["tps"]), 50.0)
+    print("False positives")
+    _print_eval_summary(dict(evals["fps"]), 0.4)
+    print("Sizes")
+    print(numpy.median(sizes), max(sizes), min(sizes))
+
+def _print_eval_summary(vals, thresh):
+    out = []
+    above = 0
+    for freq, count in sorted(vals.items(), key=lambda x: float(x[0])):
+        if float(freq) > thresh:
+            above += 1
+        else:
+            out.append("%s: %s" % (freq, count))
+    out.append("above %s: %s" % (thresh, above))
+    print("\n".join(out) + "\n")
+
+def _check_haplotype_matches(evals, chrom, start, allele_freqs, region_file, config):
+    control_name, control_file = _get_control_file(chrom, start, region_file, config)
+    for allele, freq in allele_freqs:
+        matches = []
+        for rec in SeqIO.parse(control_file, "fasta"):
+            if str(rec.seq).find(allele) >= 0:
+                matches.append(rec.id)
+        if len(matches) == 0:
+            evals["fps"]["%.1f" % freq] += 1
+        else:
+            exp_freq = sum([float(x.split("_")[-1]) for x in matches])
+            if abs(1 - (freq / exp_freq)) < 0.4 or abs(freq - exp_freq) < 1.0:
+                evals["tps"]["%.1f" % exp_freq] += 1
+            else:
+                print(freq, exp_freq)
+                evals["wrongfreq"]["%.1f" % exp_freq] += 1
+    return evals
+
+def _freebayes_call(bam_file, ref_file, region_file):
+    out_file = "%s.vcf" % os.path.splitext(bam_file)[0]
+    if not os.path.exists(out_file):
+        cmd = ("freebayes {bam_file} -f {ref_file} --pooled-continuous "
+               "--min-alternate-fraction 0.001 --min-alternate-count 2 "
+               "--haplotype-length 25 -t {region_file} > {out_file}")
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    return out_file
 
 def _merge_fastq(fq1, fq2, config):
     """Extract paired end reads and merge using pear.

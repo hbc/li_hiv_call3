@@ -3,6 +3,7 @@ ref_file: li_hiv_call3/inputs/hiv_hxb2.fa
 viquas_dir: ViQuaS1.3
 params:
   prep: pear
+  caller: freebayes
   pear:
     quality_thresh: 3
     min_overlap: 50
