@@ -79,7 +79,7 @@ def _run_cleaning(prep_fq1, prep_fq2, region_file, config):
         corr_fq2 = _correct_fastq(prep_fq2, fai_file, config)
         prep_fq1, prep_fq2 = _ensure_pairs(corr_fq1, corr_fq2)
     if "pear" in config["params"]["prep"]:
-        _check_pair_overlap(prep_fq1, prep_fq2, config["ref_file"], config)
+        # _check_pair_overlap(prep_fq1, prep_fq2, config["ref_file"], config)
         prep_fq1 = _merge_fastq(prep_fq1, prep_fq2, config)
         prep_fq2 = None
     return _realign_merged(prep_fq1, prep_fq2, region_file, config["ref_file"])
@@ -217,9 +217,10 @@ def _summarize_calls(vcf_file, region_file, config):
     sizes = []
     with pysam.VariantFile(vcf_file) as in_vcf:
         for rec in in_vcf:
-            freqs = [float(x) / float(rec.info["DP"]) * 100.0 for x in
-                     (rec.info["AO"] if isinstance(rec.info["AO"], (list, tuple)) else [rec.info["AO"]])]
-            allele_freqs = [(a, f) for f, a in sorted(zip(freqs, rec.alts), reverse=True)]
+            counts = [int(x) for x in
+                      (rec.info["AO"] if isinstance(rec.info["AO"], (list, tuple)) else [rec.info["AO"]])]
+            freqs = [float(x) / float(rec.info["DP"]) * 100.0 for x in counts]
+            allele_freqs = [(a, f, c) for f, a, c in sorted(zip(freqs, rec.alts, counts), reverse=True)]
             if len(allele_freqs[0][0]) > 10:
                 sizes.append(len(allele_freqs[0][0]))
                 evals = _check_haplotype_matches(evals, rec.chrom, rec.start, allele_freqs, region_file, config)
@@ -246,20 +247,21 @@ def _print_eval_summary(vals, thresh):
 
 def _check_haplotype_matches(evals, chrom, start, allele_freqs, region_file, config):
     control_name, control_file = _get_control_file(chrom, start, region_file, config)
-    for allele, freq in allele_freqs:
-        matches = []
-        for rec in SeqIO.parse(control_file, "fasta"):
-            if str(rec.seq).find(allele) >= 0:
-                matches.append(rec.id)
-        if len(matches) == 0:
-            evals["fps"]["%.1f" % freq] += 1
-        else:
-            exp_freq = sum([float(x.split("_")[-1]) for x in matches])
-            if abs(1 - (freq / exp_freq)) < 0.4 or abs(freq - exp_freq) < 1.0:
-                evals["tps"]["%.1f" % exp_freq] += 1
+    for allele, freq, count in allele_freqs:
+        if count > config["params"]["freebayes"]["min_count"]:
+            matches = []
+            for rec in SeqIO.parse(control_file, "fasta"):
+                if str(rec.seq).find(allele) >= 0:
+                    matches.append(rec.id)
+            if len(matches) == 0:
+                evals["fps"]["%.1f" % freq] += 1
             else:
-                print(freq, exp_freq)
-                evals["wrongfreq"]["%.1f" % exp_freq] += 1
+                exp_freq = sum([float(x.split("_")[-1]) for x in matches])
+                if abs(1 - (freq / exp_freq)) < 0.4 or abs(freq - exp_freq) < 1.0:
+                    evals["tps"]["%.1f" % exp_freq] += 1
+                else:
+                    print(freq, exp_freq)
+                    evals["wrongfreq"]["%.1f" % exp_freq] += 1
     return evals
 
 def _freebayes_call(bam_file, ref_file, region_file, config):

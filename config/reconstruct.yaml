@@ -2,11 +2,12 @@ regions: li_hiv_call3/inputs/regions-test.bed
 ref_file: li_hiv_call3/inputs/hiv_hxb2.fa
 viquas_dir: ViQuaS1.3
 params:
-  prep: []
+  prep: [pear]
   caller: freebayes
   freebayes:
     min_alt_fraction: 0.001
     haplotype_length: 25
+    min_count: 6
   pear:
     quality_thresh: 3
     min_overlap: 50
