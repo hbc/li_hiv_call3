@@ -57,8 +57,8 @@ def main(cores, config_file, *bam_files):
         for region, name, region_file in regions:
             to_prep.append((bam_file, region, name, region_file, config))
     if config["params"]["caller"] == "freebayes":
-        called = joblib.Parallel(int(cores))(joblib.delayed(_freebayes_calls)(*args) for args in to_call)
-    else:
+        called = joblib.Parallel(int(cores))(joblib.delayed(_run_freebayes)(*args) for args in to_call)
+    elif config["params"]["caller"] == "viquas":
         to_run = joblib.Parallel(int(cores))(joblib.delayed(_run_prep)(*args) for args in to_prep)
         def by_size((f, c, r, n)):
             return os.path.getsize(f)
@@ -67,8 +67,13 @@ def main(cores, config_file, *bam_files):
             print(recon_file)
 
 def _run_prep(bam_file, region, name, region_file, config):
-    fai_file = _index_ref_file(config["ref_file"])
     prep_fq1, prep_fq2 = _select_fastq_in_region(bam_file, region, region_file)
+    merged_bam_file = _run_cleaning(prep_fq1, prep_fq2, region_file, config)
+    _plot_coverage(merged_bam_file)
+    return (merged_bam_file, config, region, name)
+
+def _run_cleaning(prep_fq1, prep_fq2, region_file, config):
+    fai_file = _index_ref_file(config["ref_file"])
     if "bfc" in config["params"]["prep"]:
         corr_fq1 = _correct_fastq(prep_fq1, fai_file, config)
         corr_fq2 = _correct_fastq(prep_fq2, fai_file, config)
@@ -77,9 +82,17 @@ def _run_prep(bam_file, region, name, region_file, config):
         _check_pair_overlap(prep_fq1, prep_fq2, config["ref_file"], config)
         prep_fq1 = _merge_fastq(prep_fq1, prep_fq2, config)
         prep_fq2 = None
-    merged_bam_file = _realign_merged(prep_fq1, prep_fq2, region_file, config["ref_file"])
-    _plot_coverage(merged_bam_file)
-    return (merged_bam_file, config, region, name)
+    return _realign_merged(prep_fq1, prep_fq2, region_file, config["ref_file"])
+
+def _run_freebayes(bam_file, ref_file, region_file, config):
+    """Merge and call haplotype variants with FreeBayes.
+    """
+    full_fq1, full_fq2 = _select_full_fastqs(bam_file)
+    full_bam = _run_cleaning(full_fq1, full_fq2, None, config)
+    vcf_file = _freebayes_call(full_bam, ref_file, region_file, config)
+    print(vcf_file)
+    if "Control" in vcf_file:
+        _summarize_calls(vcf_file, region_file, config)
 
 def _run_viquas(bam_file, config, region, region_name):
     out_dir = os.path.join(os.getcwd(), "%s-viquas" % os.path.splitext(bam_file)[0])
@@ -187,17 +200,6 @@ def _ensure_pairs(f1, f2):
         out_files.append(out_file)
     return out_files
 
-def _freebayes_calls(bam_file, ref_file, region_file, config):
-    """Merge and call haplotype variants with FreeBayes.
-    """
-    full_fq1, full_fq2 = _select_full_fastqs(bam_file)
-    full_merged = _merge_fastq(full_fq1, full_fq2, config)
-    full_bam = _realign_merged(full_merged, None, None, ref_file)
-    vcf_file = _freebayes_call(full_bam, ref_file, region_file)
-    print(vcf_file)
-    if "Control" in vcf_file:
-        _summarize_calls(vcf_file, region_file, config)
-
 def _get_control_file(in_chrom, in_pos, region_file, config):
     with open(region_file) as in_handle:
         for line in in_handle:
@@ -207,6 +209,8 @@ def _get_control_file(in_chrom, in_pos, region_file, config):
     raise ValueError("Did not find control for %s %s" % (in_chrom, in_pos))
 
 def _summarize_calls(vcf_file, region_file, config):
+    """Summarize calls from a VCF file compared against known controls.
+    """
     evals = {"tps": collections.defaultdict(int),
              "fps": collections.defaultdict(int),
              "wrongfreq": collections.defaultdict(int)}
@@ -258,12 +262,16 @@ def _check_haplotype_matches(evals, chrom, start, allele_freqs, region_file, con
                 evals["wrongfreq"]["%.1f" % exp_freq] += 1
     return evals
 
-def _freebayes_call(bam_file, ref_file, region_file):
+def _freebayes_call(bam_file, ref_file, region_file, config):
+    """Run FreeBayes calling, trying to emphasize
+    """
     out_file = "%s.vcf" % os.path.splitext(bam_file)[0]
     if not os.path.exists(out_file):
+        min_alt_fraction = config["params"]["freebayes"]["min_alt_fraction"]
+        haplotype_length = config["params"]["freebayes"]["haplotype_length"]
         cmd = ("freebayes {bam_file} -f {ref_file} --pooled-continuous "
-               "--min-alternate-fraction 0.001 --min-alternate-count 2 "
-               "--haplotype-length 25 -t {region_file} > {out_file}")
+               "--min-alternate-fraction {min_alt_fraction} --min-alternate-count 2 "
+               "--haplotype-length {haplotype_length} -t {region_file} > {out_file}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
     return out_file
 
