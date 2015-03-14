@@ -92,7 +92,7 @@ def _run_freebayes(bam_file, ref_file, region_file, config):
     vcf_file = _freebayes_call(full_bam, ref_file, region_file, config)
     print(vcf_file)
     if "Control" in vcf_file:
-        _summarize_calls(vcf_file, region_file, config)
+        _summarize_calls(vcf_file, ref_file, region_file, config)
 
 def _run_viquas(bam_file, config, region, region_name):
     out_dir = os.path.join(os.getcwd(), "%s-viquas" % os.path.splitext(bam_file)[0])
@@ -200,21 +200,11 @@ def _ensure_pairs(f1, f2):
         out_files.append(out_file)
     return out_files
 
-def _get_control_file(in_chrom, in_pos, region_file, config):
-    with open(region_file) as in_handle:
-        for line in in_handle:
-            chrom, start, end, name = line.rstrip().split("\t")
-            if in_chrom == chrom and in_pos >= int(start) and in_pos < int(end):
-                return name, config["controls"][name]
-    raise ValueError("Did not find control for %s %s" % (in_chrom, in_pos))
-
-def _summarize_calls(vcf_file, region_file, config):
+def _summarize_calls(vcf_file, ref_file, region_file, config):
     """Summarize calls from a VCF file compared against known controls.
     """
-    evals = {"tps": collections.defaultdict(int),
-             "fps": collections.defaultdict(int),
-             "wrongfreq": collections.defaultdict(int)}
     sizes = []
+    cmanage = ControlManager(region_file, ref_file, config)
     with pysam.VariantFile(vcf_file) as in_vcf:
         for rec in in_vcf:
             counts = [int(x) for x in
@@ -223,14 +213,16 @@ def _summarize_calls(vcf_file, region_file, config):
             allele_freqs = [(a, f, c) for f, a, c in sorted(zip(freqs, rec.alts, counts), reverse=True)]
             if len(allele_freqs[0][0]) > 10:
                 sizes.append(len(allele_freqs[0][0]))
-                evals = _check_haplotype_matches(evals, rec.chrom, rec.start, allele_freqs, region_file, config)
-    pprint.pprint(dict(evals["tps"]))
-    pprint.pprint(dict(evals["fps"]))
-    pprint.pprint(dict(evals["wrongfreq"]))
+            cmanage = _check_haplotype_matches(cmanage, rec.chrom, rec.start, rec.ref, allele_freqs,
+                                               ref_file, region_file, config)
+    print("Wrong frequency")
+    pprint.pprint(dict(cmanage.evals["wrongfreq"]))
     print("True positives")
-    _print_eval_summary(dict(evals["tps"]), 50.0)
+    _print_eval_summary(dict(cmanage.evals["tps"]), 50.0)
+    pprint.pprint(dict(cmanage.evals["tps"]))
     print("False positives")
-    _print_eval_summary(dict(evals["fps"]), 0.4)
+    _print_eval_summary(dict(cmanage.evals["fps"]), 0.4)
+    pprint.pprint(dict(cmanage.evals["fps"]))
     print("Sizes")
     print(numpy.median(sizes), max(sizes), min(sizes))
 
@@ -245,24 +237,136 @@ def _print_eval_summary(vals, thresh):
     out.append("above %s: %s" % (thresh, above))
     print("\n".join(out) + "\n")
 
-def _check_haplotype_matches(evals, chrom, start, allele_freqs, region_file, config):
-    control_name, control_file = _get_control_file(chrom, start, region_file, config)
+def _get_control_file(in_chrom, in_pos, region_file, config):
+    with open(region_file) as in_handle:
+        for line in in_handle:
+            chrom, start, end, name = line.rstrip().split("\t")
+            if in_chrom == chrom and in_pos >= int(start) and in_pos < int(end):
+                return name, (chrom, int(start), int(end)), config["controls"][name]
+    raise ValueError("Did not find control for %s %s" % (in_chrom, in_pos))
+
+class ControlManager:
+    def __init__(self, region_file, ref_file, config):
+        self._region_file = region_file
+        self._ref_file = ref_file
+        self._config = config
+        self._controls = {}
+        self.evals = {"tps": collections.defaultdict(int),
+                      "fps": collections.defaultdict(int),
+                      "wrongfreq": collections.defaultdict(int)}
+
+    def get_controls(self, chrom, start):
+        control_name, control_coords, control_file = _get_control_file(chrom, start, self._region_file,
+                                                                       self._config)
+        if control_file in self._controls:
+            return self._controls[control_file]
+        else:
+            controls = _prep_control_alignments(control_file, control_coords, self._ref_file)
+            self._controls[control_file] = controls
+            return controls
+
+class ControlVariants:
+    def __init__(self, name, chrom, start, end, ref, control):
+        self.name = name
+        self.chrom = chrom
+        self.start = start
+        self.end = end
+        self.ref = ref
+        self.control = control
+        self.exp_freq = float(name.split("_")[-1])
+        self.variants = self._calc_diffs(ref, control)
+        self._matches = set([])
+
+    def _calc_diffs(self, ref, control):
+        """Calculate all differences between pre-aligned reference and control for validation.
+        """
+        vs = {}
+        last_r, last_c = None, None
+        cur_indel_r, cur_indel_c, cur_indel_i = None, None, None
+        for i, r in enumerate(ref):
+            c = control[i]
+            if c != r:
+                if c == "-" or r == "-":
+                    if not cur_indel_i:
+                        cur_indel_r = last_r
+                        cur_indel_c = last_c
+                        cur_indel_i = i - 1
+                    cur_indel_r += r
+                    cur_indel_c += c
+                else:
+                    if cur_indel_i:
+                        vs[cur_indel_i] = (cur_indel_r, cur_indel_c)
+                        cur_indel_r, cur_indel_c, cur_indel_i = None, None, None
+                    vs[i] = (r, c)
+            elif cur_indel_i:
+                vs[cur_indel_i] = (cur_indel_r, cur_indel_c)
+                cur_indel_r, cur_indel_c, cur_indel_i = None, None, None
+            last_r, last_c = r, c
+        return vs
+
+    def variant_matches(self, chrom, pos, ref_allele, allele):
+        assert chrom == self.chrom
+        lpos = pos - self.start
+        lend = lpos + len(ref_allele)
+        assert lpos >= 0
+
+        cref = self.ref[lpos:lend]
+        calt = cref[:]
+        matches = []
+        for vi, (vref, valt) in self.variants.items():
+            if vi >= lpos and vi < lend:
+                vs = vi - lpos
+                ve = vs + len(vref.replace("-", ""))
+                assert cref[vs:ve] == vref.replace("-", ""), (cref[vs:ve], vref, vi)
+                calt = calt[:vs] + valt.replace("-", "") + calt[ve:]
+                matches.append((vi, vref, valt))
+        #print(self.name, calt, allele, matches)
+        if calt == allele:
+            for i in matches:
+                self._matches.add(i)
+            return True
+        else:
+            return False
+
+def _prep_control_alignments(control_file, control_coords, ref_file):
+    """Align controls to references to provide baseline for assessing variability.
+    """
+    ref = SeqIO.parse(ref_file, "fasta").next()
+    chrom, start, end = control_coords
+    assert chrom == ref.id
+    ref_seq = str(ref.seq[start:end])
+    aligns = []
+    for rec in SeqIO.parse(control_file, "fasta"):
+        rec_start, rec_end = [int(x) for x in rec.id.split("_")[-2].split("-")]
+        start_offset = start - rec_start + 1
+        end_offset = rec_end - end
+        rec_seq = str(rec.seq)[start_offset:-end_offset]
+        cur_align = pairwise2.align.globalms(ref_seq, rec_seq, 1, 0, -1, -0.1,
+                                             one_alignment_only=True)[0][:2]
+        aligns.append(ControlVariants(rec.id, chrom, start, end, cur_align[0], cur_align[1]))
+    return aligns
+
+def _check_haplotype_matches(cmanage, chrom, start, ref_allele, allele_freqs, ref_file,
+                             region_file, config):
+
     for allele, freq, count in allele_freqs:
         if count > config["params"]["freebayes"]["min_count"]:
-            matches = []
-            for rec in SeqIO.parse(control_file, "fasta"):
-                if str(rec.seq).find(allele) >= 0:
-                    matches.append(rec.id)
-            if len(matches) == 0:
-                evals["fps"]["%.1f" % freq] += 1
+            print("---")
+            control_matches = []
+            for control in cmanage.get_controls(chrom, start):
+                if control.variant_matches(chrom, start, ref_allele, allele):
+                    control_matches.append(control)
+            if len(control_matches) == 0:
+                print("fp", chrom, start, allele, freq, count)
+                cmanage.evals["fps"]["%.1f" % freq] += 1
             else:
-                exp_freq = sum([float(x.split("_")[-1]) for x in matches])
+                exp_freq = sum(m.exp_freq for m in control_matches)
                 if abs(1 - (freq / exp_freq)) < 0.4 or abs(freq - exp_freq) < 1.0:
-                    evals["tps"]["%.1f" % exp_freq] += 1
+                    cmanage.evals["tps"]["%.1f" % exp_freq] += 1
                 else:
-                    print(freq, exp_freq)
-                    evals["wrongfreq"]["%.1f" % exp_freq] += 1
-    return evals
+                    print("wrongfreq", chrom, start, allele, freq, exp_freq)
+                    cmanage.evals["wrongfreq"]["%.1f" % exp_freq] += 1
+    return cmanage
 
 def _freebayes_call(bam_file, ref_file, region_file, config):
     """Run FreeBayes calling, trying to emphasize
