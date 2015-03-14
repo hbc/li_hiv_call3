@@ -280,10 +280,13 @@ class ControlVariants:
     def _calc_diffs(self, ref, control):
         """Calculate all differences between pre-aligned reference and control for validation.
         """
-        vs = {}
+        vs = collections.OrderedDict()
         last_r, last_c = None, None
-        cur_indel_r, cur_indel_c, cur_indel_i = None, None, None
+        cur_indel_r, cur_indel_c, cur_indel_i, cur_indel_ref_i = None, None, None, None
+        ref_i = -1
         for i, r in enumerate(ref):
+            if r != "-":
+                ref_i += 1
             c = control[i]
             if c != r:
                 if c == "-" or r == "-":
@@ -291,36 +294,41 @@ class ControlVariants:
                         cur_indel_r = last_r
                         cur_indel_c = last_c
                         cur_indel_i = i - 1
+                        cur_indel_ref_i = ref_i - 1
                     cur_indel_r += r
                     cur_indel_c += c
                 else:
                     if cur_indel_i:
-                        vs[cur_indel_i] = (cur_indel_r, cur_indel_c)
-                        cur_indel_r, cur_indel_c, cur_indel_i = None, None, None
-                    vs[i] = (r, c)
+                        vs[cur_indel_ref_i] = (cur_indel_i, cur_indel_r, cur_indel_c)
+                        cur_indel_r, cur_indel_c, cur_indel_i, cur_indel_ref_i = None, None, None, None
+                    vs[ref_i] = (i, r, c)
             elif cur_indel_i:
-                vs[cur_indel_i] = (cur_indel_r, cur_indel_c)
-                cur_indel_r, cur_indel_c, cur_indel_i = None, None, None
+                vs[cur_indel_ref_i] = (cur_indel_i, cur_indel_r, cur_indel_c)
+                cur_indel_r, cur_indel_c, cur_indel_i, cur_indel_ref_i = None, None, None, None
             last_r, last_c = r, c
         return vs
 
     def variant_matches(self, chrom, pos, ref_allele, allele):
         assert chrom == self.chrom
-        lpos = pos - self.start
-        lend = lpos + len(ref_allele)
+        lpos_ref = pos - self.start
+        lpos = lpos_ref + self.ref[:lpos_ref].count("-")
         assert lpos >= 0
 
-        cref = self.ref[lpos:lend]
+        cref = self.ref[lpos:lpos + len(ref_allele)]
+        cref = self.ref[lpos:lpos + len(ref_allele) + cref.count("-")]
         calt = cref[:]
+        alt_gaps = 0
         matches = []
-        for vi, (vref, valt) in self.variants.items():
-            if vi >= lpos and vi < lend:
+        for ref_vi, (vi, vref, valt) in self.variants.items():
+            if ref_vi >= lpos_ref and ref_vi < lpos_ref + len(ref_allele):
                 vs = vi - lpos
-                ve = vs + len(vref.replace("-", ""))
-                assert cref[vs:ve] == vref.replace("-", ""), (cref[vs:ve], vref, vi)
-                calt = calt[:vs] + valt.replace("-", "") + calt[ve:]
-                matches.append((vi, vref, valt))
-        #print(self.name, calt, allele, matches)
+                ve = vs + len(vref)
+                if len(cref[vs:ve].replace("-", "")) > 0:
+                    assert cref[vs:ve].replace("-", "") == vref.replace("-", ""), \
+                        (cref[vs:ve], vref, len(cref), vi, vs, ve)
+                    calt = calt[:vs - alt_gaps] + valt.replace("-", "") + calt[ve - alt_gaps:]
+                    alt_gaps += valt.count("-")
+                    matches.append((vi, vs, ve, vref, valt))
         if calt == allele:
             for i in matches:
                 self._matches.add(i)
@@ -351,7 +359,6 @@ def _check_haplotype_matches(cmanage, chrom, start, ref_allele, allele_freqs, re
 
     for allele, freq, count in allele_freqs:
         if count > config["params"]["freebayes"]["min_count"]:
-            print("---")
             control_matches = []
             for control in cmanage.get_controls(chrom, start):
                 if control.variant_matches(chrom, start, ref_allele, allele):
