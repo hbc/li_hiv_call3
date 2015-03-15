@@ -5,7 +5,7 @@ params:
   prep: [pear]
   caller: freebayes
   freebayes:
-    min_alt_fraction: 0.001
+    min_alt_fraction: 0.0001
     haplotype_length: 25
     min_count: 6
   pear:

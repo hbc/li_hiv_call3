@@ -223,8 +223,12 @@ def _summarize_calls(vcf_file, ref_file, region_file, config):
     print("False positives")
     _print_eval_summary(dict(cmanage.evals["fps"]), 0.4)
     pprint.pprint(dict(cmanage.evals["fps"]))
-    print("Sizes")
-    print(numpy.median(sizes), max(sizes), min(sizes))
+    print("False negatives")
+    for control in cmanage.get_all_controls():
+        print(control.name, control.get_no_matches())
+    if len(sizes) > 0:
+        print("Sizes")
+        print(numpy.median(sizes), max(sizes), min(sizes))
 
 def _print_eval_summary(vals, thresh):
     out = []
@@ -255,6 +259,12 @@ class ControlManager:
                       "fps": collections.defaultdict(int),
                       "wrongfreq": collections.defaultdict(int)}
 
+    def get_all_controls(self):
+        out = []
+        for control_file, controls in self._controls.items():
+            out.extend(controls)
+        return out
+
     def get_controls(self, chrom, start):
         control_name, control_coords, control_file = _get_control_file(chrom, start, self._region_file,
                                                                        self._config)
@@ -276,6 +286,17 @@ class ControlVariants:
         self.exp_freq = float(name.split("_")[-1])
         self.variants = self._calc_diffs(ref, control)
         self._matches = set([])
+
+    def get_no_matches(self):
+        out = []
+        matched = 0
+        for vi, (_, ref, alt) in self.variants.items():
+            if vi not in self._matches:
+                out.append((vi + self.start, ref, alt))
+            else:
+                matched += 1
+        print(self.name, self._matches, matched)
+        return out
 
     def _calc_diffs(self, ref, control):
         """Calculate all differences between pre-aligned reference and control for validation.
@@ -323,12 +344,12 @@ class ControlVariants:
             if ref_vi >= lpos_ref and ref_vi < lpos_ref + len(ref_allele):
                 vs = vi - lpos
                 ve = vs + len(vref)
-                if len(cref[vs:ve].replace("-", "")) > 0:
+                if len(cref[vs:ve].replace("-", "")) == len(vref.replace("-", "")):
                     assert cref[vs:ve].replace("-", "") == vref.replace("-", ""), \
                         (cref[vs:ve], vref, len(cref), vi, vs, ve)
                     calt = calt[:vs - alt_gaps] + valt.replace("-", "") + calt[ve - alt_gaps:]
                     alt_gaps += valt.count("-")
-                    matches.append((vi, vs, ve, vref, valt))
+                    matches.append(ref_vi)
         if calt == allele:
             for i in matches:
                 self._matches.add(i)
