@@ -3,14 +3,18 @@
 Explore approaches to cleanly create a single truth VCF with multiple
 frequency information.
 """
+import collections
+import copy
 import os
 import subprocess
 import sys
 
-import toolz as tz
-import yaml
-
 from Bio import SeqIO
+import toolz as tz
+import vcf
+from vcf import model as vcf_model
+from vcf import parser as vcf_parser
+import yaml
 
 def main(config_file):
     with open(config_file) as in_handle:
@@ -49,7 +53,32 @@ def pileup_prep_controls(control_info, ref_file):
         vcf_file = pileup_call_control(control_file, ref_file, work_dir)
         vcfs.append(((start, end), vcf_file))
     vcfs = [xs[-1] for xs in sorted(vcfs)]
-    return concat_control_vcfs(vcfs, os.getcwd())
+    combined_calls = concat_control_vcfs(vcfs, os.getcwd())
+    return calculate_freqs(combined_calls)
+
+def calculate_freqs(in_file):
+    CallData = collections.namedtuple('calldata', ["GT"])
+    out_file = "%s-freqs.vcf" % in_file.replace(".vcf.gz", "")
+    in_bcf = vcf.Reader(filename=in_file)
+    template = copy.copy(in_bcf)
+    template.samples = ["control"]
+    template.infos["FREQ"] = vcf_parser._Info("FREQ", "A", "Float", "Control frequencies for each allele", "", "")
+    out_bcf = vcf.Writer(open(out_file, "w"), template)
+    print out_bcf.template.infos
+    for rec in in_bcf:
+        freqs = {}
+        for i in range(len(rec.ALT)):
+            freqs[i + 1] = 0.0
+        for sample in rec.samples:
+            for ai in sample.data.GT.split("/"):
+                if ai != "." and int(ai) > 0:
+                    freqs[int(ai)] += float(sample.sample)
+        freqs = ",".join(["%.1f" % freq for i, freq in sorted(freqs.items())])
+        rec.INFO = {}
+        rec.add_info("FREQ", freqs)
+        rec.samples = [vcf_model._Call(rec, "control", CallData("0/1"))]
+        out_bcf.write_record(rec)
+    return out_file
 
 def concat_control_vcfs(vcfs, work_dir):
     out_file = os.path.join(os.getcwd(), "controls.vcf.gz")
