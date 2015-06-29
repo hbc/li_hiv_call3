@@ -7,20 +7,22 @@ import os
 import subprocess
 import sys
 
+import toolz as tz
+import yaml
+
 from Bio import SeqIO
 
-def main(control_file, ref_file, jvarkit_path=None):
-    approach = "pileup"
-    start, end = _get_coords(control_file)
-    work_dir = os.path.join(os.getcwd(), "%s-prep" % os.path.splitext(os.path.basename(control_file))[0])
-    if not os.path.exists(work_dir):
-        os.makedirs(work_dir)
-    if approach == "pileup":
-        pileup_call_all(control_file, ref_file, work_dir)
-    elif approach == "multialign":
+def main(config_file):
+    with open(config_file) as in_handle:
+        config = yaml.load(in_handle)
+    if tz.get_in(["params", "validation", "vcf_prep_method"], config) == "pileup":
+        out_vcf = pileup_prep_controls(config["controls"], config["ref_file"])
+    elif tz.get_in(["params", "validation", "vcf_prep_method"], config) == "multialign":
         contig, input_file = make_input_file(control_file, start, end, ref_file, work_dir)
         out_vcf = prep_vcf(input_file, contig, start, jvarkit_path, ref_file)
-        print out_vcf
+    else:
+        out_vcf = None
+    print "Control VCF", out_vcf
 
 def _get_coords(in_file):
     """Retrieve coordinates from the headers of input FASTA files.
@@ -37,17 +39,64 @@ def _get_coords(in_file):
 
 # -- pileup based variant calling
 
-def pileup_call_all(control_file, ref_file, work_dir):
+def pileup_prep_controls(control_info, ref_file):
+    vcfs = []
+    for name, control_file in control_info.items():
+        start, end = _get_coords(control_file)
+        work_dir = os.path.join(os.getcwd(), "%s-prep" % os.path.splitext(os.path.basename(control_file))[0])
+        if not os.path.exists(work_dir):
+            os.makedirs(work_dir)
+        vcf_file = pileup_call_control(control_file, ref_file, work_dir)
+        vcfs.append(((start, end), vcf_file))
+    vcfs = [xs[-1] for xs in sorted(vcfs)]
+    return concat_control_vcfs(vcfs, os.getcwd())
+
+def concat_control_vcfs(vcfs, work_dir):
+    out_file = os.path.join(os.getcwd(), "controls.vcf.gz")
+    in_vcf_str = " ".join(vcfs)
+    cmd = "bcftools concat -O z -o {out_file} {in_vcf_str}"
+    subprocess.check_call(cmd.format(**locals()), shell=True)
+    cmd = ("tabix -f -p vcf {out_file}")
+    subprocess.check_call(cmd.format(**locals()), shell=True)
+    return out_file
+
+def pileup_call_control(control_file, ref_file, work_dir):
     """Call pileup-based variant calling for a set of inputs in a control file.
     """
+    inputs = []
     for rec in SeqIO.parse(control_file, "fasta"):
         out_file = os.path.join(work_dir, "%s.fa" % rec.description.replace(".", "_"))
+        rec.description = rec.description.split("_")[-1]
         with open(out_file, "w") as out_handle:
             SeqIO.write([rec], out_handle, "fasta")
-        call_with_alignment(out_file, ref_file)
+        inputs.append((float(rec.description), out_file))
+    inputs.sort(reverse=True)
+    vcfs = []
+    for freq, fasta_file in inputs:
+        vcfs.append(call_with_alignment(fasta_file, ref_file, "%.1f" % freq))
+    return merge_pileup_calls(vcfs, control_file, ref_file, work_dir)
 
-def call_with_alignment(in_file, ref_file):
-    print in_file
+def call_with_alignment(in_file, ref_file, sample_name):
+    """Do alignment and pileup based calling to produce a VCF file for a sample.
+    """
+    align_file = "%s.bam" % os.path.splitext(in_file)[0]
+    cmd = (r"bwa mem -R '@RG\tID:{sample_name}\tPL:illumina\tPU:{sample_name}\tSM:{sample_name}' "
+           r"{ref_file} {in_file}"
+           r" | samtools sort -O bam -T {align_file}-tmp -o {align_file}")
+    subprocess.check_call(cmd.format(**locals()), shell=True)
+    variant_file = "%s.vcf.gz" % os.path.splitext(in_file)[0]
+    cmd = ("samtools mpileup -uf {ref_file} {align_file} | bcftools call -mv -Oz > {variant_file}")
+    subprocess.check_call(cmd.format(**locals()), shell=True)
+    cmd = ("tabix -f -p vcf {variant_file}")
+    subprocess.check_call(cmd.format(**locals()), shell=True)
+    return variant_file
+
+def merge_pileup_calls(vcfs, control_file, ref_file, work_dir):
+    out_file = os.path.join(work_dir, "%s.vcf.gz" % os.path.splitext(os.path.basename(control_file))[0])
+    input_vcf_str = " ".join(vcfs)
+    cmd = "bcftools merge -o {out_file} -O z {input_vcf_str}"
+    subprocess.check_call(cmd.format(**locals()), shell=True)
+    return out_file
 
 # -- multiple alignment based
 

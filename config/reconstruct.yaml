@@ -6,7 +6,7 @@ params:
   caller: freebayes
   freebayes:
     min_alt_fraction: 0.0001
-    haplotype_length: 25
+    haplotype_length: 10
     min_count: 6
   pear:
     quality_thresh: 3
@@ -18,6 +18,8 @@ params:
   viquas:
     o: 5
     r: 0.6
+  validation:
+    vcf_prep_method: pileup
 controls:
   IN: li_hiv_call3/inputs/IN-control.fa
   PRO-RT: li_hiv_call3/inputs/PRO-RT-control.fa
