@@ -56,8 +56,11 @@ def main(cores, config_file, *bam_files):
         to_call.append((bam_file, config["ref_file"], config["regions"], config))
         for region, name, region_file in regions:
             to_prep.append((bam_file, region, name, region_file, config))
+
     if config["params"]["caller"] == "freebayes":
         called = joblib.Parallel(int(cores))(joblib.delayed(_run_freebayes)(*args) for args in to_call)
+    elif config["params"]["caller"] == "lofreq":
+        called = joblib.Parallel(int(cores))(joblib.delayed(_run_lofreq)(*args) for args in to_call)
     elif config["params"]["caller"] == "viquas":
         to_run = joblib.Parallel(int(cores))(joblib.delayed(_run_prep)(*args) for args in to_prep)
         def by_size((f, c, r, n)):
@@ -84,15 +87,48 @@ def _run_cleaning(prep_fq1, prep_fq2, region_file, config):
         prep_fq2 = None
     return _realign_merged(prep_fq1, prep_fq2, region_file, config["ref_file"])
 
+def _run_lofreq(bam_file, ref_file, region_file, config):
+    """Perform pooled variant calling with lofreq.
+    """
+    prep = True
+    work_dir = "lofreq"
+    if not os.path.exists(work_dir):
+        os.makedirs(work_dir)
+    if prep:
+        prep_bam_file = os.path.join(work_dir, "%s-prep%s" % os.path.splitext(os.path.basename(bam_file)))
+        cmd = ("lofreq viterbi -f {ref_file} {bam_file} | "
+               "lofreq indelqual --dindel -f {ref_file} - | "
+               "samtools sort -O bam -T {prep_bam_file}-tmp -o {prep_bam_file}")
+        if not os.path.exists(prep_bam_file):
+            subprocess.check_call(cmd.format(**locals()), shell=True)
+        bai_file = prep_bam_file + ".bai"
+        if not os.path.exists(bai_file):
+            cmd = "samtools index {prep_bam_file}"
+            subprocess.check_call(cmd.format(**locals()), shell=True)
+        out_vcf = "%s.vcf" % os.path.splitext(prep_bam_file)[0]
+        extra_args = "--call-indels"
+    else:
+        prep_bam_file = bam_file
+        out_vcf = os.path.join(work_dir, "%s.vcf" % os.path.splitext(os.path.basename(bam_file))[0])
+        extra_args = ""
+    if not os.path.exists(out_vcf):
+        cmd = "lofreq call {prep_bam_file} -f {ref_file} -l {region_file} -N {extra_args} -o {out_vcf}"
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    return out_vcf
+
 def _run_freebayes(bam_file, ref_file, region_file, config):
     """Merge and call haplotype variants with FreeBayes.
     """
-    full_fq1, full_fq2 = _select_full_fastqs(bam_file)
+    work_dir = "freebayes"
+    if not os.path.exists(work_dir):
+        os.makedirs(work_dir)
+    full_fq1, full_fq2 = _select_full_fastqs(bam_file, work_dir)
     full_bam = _run_cleaning(full_fq1, full_fq2, None, config)
     vcf_file = _freebayes_call(full_bam, ref_file, region_file, config)
     print(vcf_file)
     if "Control" in vcf_file:
-        _summarize_calls(vcf_file, ref_file, region_file, config)
+        _summarize_calls(vcf_file, ref_file, config["control_vcf"])
+        #_summarize_calls_haplotype(vcf_file, ref_file, region_file, config)
 
 def _run_viquas(bam_file, config, region, region_name):
     out_dir = os.path.join(os.getcwd(), "%s-viquas" % os.path.splitext(bam_file)[0])
@@ -200,8 +236,26 @@ def _ensure_pairs(f1, f2):
         out_files.append(out_file)
     return out_files
 
-def _summarize_calls(vcf_file, ref_file, region_file, config):
-    """Summarize calls from a VCF file compared against known controls.
+# -- Validation
+
+def _summarize_calls(vcf_file, ref_file, control_file):
+    """Summarize calls against standard validation VCF, not requiring phasing.
+    """
+    with open(ref_file + ".fai") as in_handle:
+        locs = []
+        for line in in_handle:
+            locs.append(line.split()[0])
+        locs = ",".join(locs)
+    out_prefix = "%s-cmp" % vcf_file.replace(".gz", "").replace(".vcf", "")
+    cmd = [os.path.join(os.path.dirname(sys.executable), "hap.py"),
+           "-o", out_prefix, "-r", ref_file, "-V",
+           "--no-fixchr-truth", "--no-fixchr-query", "-l", locs,
+           control_file, vcf_file]
+    subprocess.check_call(cmd)
+    raise NotImplementedError
+
+def _summarize_calls_haplotype(vcf_file, ref_file, region_file, config):
+    """Summarize calls from a VCF file compared against known controls, requiring long haplotypes.
     """
     sizes = []
     cmanage = ControlManager(region_file, ref_file, config)
@@ -396,6 +450,8 @@ def _check_haplotype_matches(cmanage, chrom, start, ref_allele, allele_freqs, re
                     cmanage.evals["wrongfreq"]["%.1f" % exp_freq] += 1
     return cmanage
 
+# -- Variant calling
+
 def _freebayes_call(bam_file, ref_file, region_file, config):
     """Run FreeBayes calling, trying to emphasize
     """
@@ -426,7 +482,6 @@ def _merge_fastq(fq1, fq2, config):
 def _check_pair_overlap(fq1_file, fq2_file, ref_file, config):
     """Ensure that pairs of fastq files overlap
     """
-    import pysam
     import matplotlib.pyplot as plt
     check_file = "%s-check_ol.bam" % (fq1_file)
     if not os.path.exists(check_file):
@@ -459,7 +514,6 @@ def _check_pair_overlap(fq1_file, fq2_file, ref_file, config):
 def _plot_coverage(bam_file):
     """Simple coverage plot for an input BAM file.
     """
-    import pysam
     import matplotlib.pyplot as plt
     out_file = "%s-coverage.pdf" % os.path.splitext(bam_file)[0]
     if not os.path.exists(out_file):
@@ -496,8 +550,9 @@ def _realign_merged(fq1_file, fq2_file, region_file, ref_file):
         subprocess.check_call(["samtools", "index", out_file])
     return out_file
 
-def _select_full_fastqs(bam_file):
-    base, ext = os.path.splitext(bam_file)
+def _select_full_fastqs(bam_file, work_dir):
+    base, ext = os.path.splitext(os.path.basename(bam_file))
+    base = os.path.join(work_dir, base)
     full_fq1 = "%s-1.fastq" % base
     full_fq2 = "%s-2.fastq" % base
     if not os.path.exists(full_fq1):

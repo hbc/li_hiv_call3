@@ -1,12 +1,12 @@
-regions: li_hiv_call3/inputs/regions-test.bed
+regions: li_hiv_call3/inputs/regions.bed
 ref_file: li_hiv_call3/inputs/hiv_hxb2.fa
 viquas_dir: ViQuaS1.3
 params:
   prep: [pear]
-  caller: freebayes
+  caller: lofreq
   freebayes:
     min_alt_fraction: 0.0001
-    haplotype_length: 10
+    haplotype_length: 0
     min_count: 6
   pear:
     quality_thresh: 3
@@ -20,6 +20,7 @@ params:
     r: 0.6
   validation:
     vcf_prep_method: pileup
+control_vcf: li_hiv_call3/inputs/controls-freqs.vcf
 controls:
   IN: li_hiv_call3/inputs/IN-control.fa
   PRO-RT: li_hiv_call3/inputs/PRO-RT-control.fa
