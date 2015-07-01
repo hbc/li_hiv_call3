@@ -4,6 +4,10 @@ viquas_dir: ViQuaS1.3
 params:
   prep: [pear]
   caller: lofreq
+  lofreq:
+    fn_highfreq_thresh: 5.0
+    fp_thresh: 2.5
+    sb_thresh: 600
   freebayes:
     min_alt_fraction: 0.0001
     haplotype_length: 0

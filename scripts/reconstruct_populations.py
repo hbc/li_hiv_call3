@@ -90,6 +90,7 @@ def _run_cleaning(prep_fq1, prep_fq2, region_file, config):
 def _run_lofreq(bam_file, ref_file, region_file, config):
     """Perform pooled variant calling with lofreq.
     """
+    params = config["params"]["lofreq"]
     prep = True
     work_dir = "lofreq"
     if not os.path.exists(work_dir):
@@ -112,8 +113,12 @@ def _run_lofreq(bam_file, ref_file, region_file, config):
         out_vcf = os.path.join(work_dir, "%s.vcf" % os.path.splitext(os.path.basename(bam_file))[0])
         extra_args = ""
     if not os.path.exists(out_vcf):
-        cmd = "lofreq call {prep_bam_file} -f {ref_file} -l {region_file} -N {extra_args} -o {out_vcf}"
+        sb_thresh = params["sb_thresh"]
+        cmd = ("lofreq call {prep_bam_file} -f {ref_file} -l {region_file} -N {extra_args} |"
+               "lofreq filter -B {sb_thresh} --sb-incl-indels > {out_vcf}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
+    if "Control" in out_vcf:
+        _summarize_calls(out_vcf, ref_file, config["control_vcf"], config["params"]["lofreq"])
     return out_vcf
 
 def _run_freebayes(bam_file, ref_file, region_file, config):
@@ -238,21 +243,68 @@ def _ensure_pairs(f1, f2):
 
 # -- Validation
 
-def _summarize_calls(vcf_file, ref_file, control_file):
+def _summarize_calls(vcf_file, ref_file, control_file, params=None):
     """Summarize calls against standard validation VCF, not requiring phasing.
     """
-    with open(ref_file + ".fai") as in_handle:
-        locs = []
-        for line in in_handle:
-            locs.append(line.split()[0])
-        locs = ",".join(locs)
-    out_prefix = "%s-cmp" % vcf_file.replace(".gz", "").replace(".vcf", "")
-    cmd = [os.path.join(os.path.dirname(sys.executable), "hap.py"),
-           "-o", out_prefix, "-r", ref_file, "-V",
-           "--no-fixchr-truth", "--no-fixchr-query", "-l", locs,
-           control_file, vcf_file]
-    subprocess.check_call(cmd)
-    raise NotImplementedError
+    control_calls = _read_control(control_file)
+
+    tps = []
+    tp_freqs = collections.defaultdict(int)
+    fps = []
+    fps_lowfreq = []
+    sb_tps = 0
+    sb_fps = 0
+    with pysam.VariantFile(vcf_file) as in_bcf:
+        for rec in in_bcf:
+            for alt in rec.alts:
+                key = (rec.chrom, rec.pos, rec.ref, alt)
+                if key in control_calls:
+                    tp_freqs[control_calls[key]] += 1
+                    tps.append(control_calls[key])
+                    del control_calls[key]
+                    if rec.info["SB"] > params["sb_thresh"]:
+                        print(dict(rec.info))
+                        sb_tps += 1
+                elif rec.info["SB"] > params["sb_thresh"]:
+                    sb_fps += 1
+                elif rec.info["AF"] >= params["fp_thresh"] / 100.0:
+                    fps.append((key, dict(rec.info)))
+                else:
+                    fps_lowfreq.append((key, dict(rec.info)))
+    print("Strand bias filter", sb_tps, sb_fps)
+    print()
+    print("TP", len(tps), "\nFP", len(fps), "\nFN", len(control_calls),
+          "\nFP lowfreq (< %.1f)" % params["fp_thresh"], len(fps_lowfreq))
+    print()
+    fn_freqs = collections.defaultdict(int)
+    print("High frequency FNs (> %s)" % params["fn_highfreq_thresh"])
+    for key, freq in control_calls.items():
+        fn_freqs[freq] += 1
+        if freq > params["fn_highfreq_thresh"]:
+            print(key)
+    print("TP/FN frequencies")
+    freqs = list(sorted(set(tp_freqs.keys() + fn_freqs.keys()), reverse=True))
+    print("| freq | TP | FN |")
+    for freq in freqs:
+        print("| %.2f | %s | %s |" % (freq, tp_freqs[freq], fn_freqs[freq]))
+    print("False positive values")
+    for fp in fps:
+        print(fp)
+
+def _read_control(control_file):
+    """Read control VCF into a dictionary to use for lookups.
+    """
+    out = {}
+    with pysam.VariantFile(control_file) as in_vcf:
+        for rec in in_vcf:
+            freqs = rec.info["FREQ"]
+            if not isinstance(freqs, (list, tuple)):
+                freqs = [freqs]
+            assert len(freqs) == len(rec.alts), (rec.chrom, rec.pos, freqs, rec.alts)
+            for alt, freq, in zip(rec.alts, freqs):
+                key = (rec.chrom, rec.pos, rec.ref, alt)
+                out[key] = freq
+    return dict(out)
 
 def _summarize_calls_haplotype(vcf_file, ref_file, region_file, config):
     """Summarize calls from a VCF file compared against known controls, requiring long haplotypes.
