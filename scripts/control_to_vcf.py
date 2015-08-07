@@ -70,7 +70,7 @@ def calculate_freqs(in_file):
         for i in range(len(rec.ALT)):
             freqs[i + 1] = 0.0
         for sample in rec.samples:
-            for ai in sample.data.GT.split("/"):
+            for ai in sample.data.GT.split("/") if sample.data.GT.find("/") > 0 else sample.data.GT.split("|"):
                 if ai != "." and int(ai) > 0:
                     freqs[int(ai)] += float(sample.sample)
         freqs = ",".join(["%.1f" % freq for i, freq in sorted(freqs.items())])
@@ -114,7 +114,11 @@ def call_with_alignment(in_file, ref_file, sample_name):
            r" | samtools sort -O bam -T {align_file}-tmp -o {align_file}")
     subprocess.check_call(cmd.format(**locals()), shell=True)
     variant_file = "%s.vcf.gz" % os.path.splitext(in_file)[0]
-    cmd = ("samtools mpileup -uf {ref_file} {align_file} | bcftools call -mv -Oz > {variant_file}")
+    cmd = ("freebayes -f {ref_file} {align_file} --min-alternate-fraction 0 --pooled-continuous "
+           "--report-monomorphic --haplotype-length 0 --min-alternate-count 1 | "
+           "vcfallelicprimitives | vt normalize -r {ref_file} - | "
+           "sed 's:0/0:0/1:' | sed 's:0|0:0|1:' | "
+           "bgzip -c > {variant_file}")
     subprocess.check_call(cmd.format(**locals()), shell=True)
     cmd = ("tabix -f -p vcf {variant_file}")
     subprocess.check_call(cmd.format(**locals()), shell=True)

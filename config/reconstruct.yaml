@@ -5,10 +5,12 @@ params:
   prep: [pear]
   caller: lofreq
   lofreq:
-    fn_highfreq_thresh: 5.0
-    fp_thresh: 2.5
+    prep: gatk
     sb_thresh: 600
+  vardict:
+    min_af: 0.0001
   freebayes:
+    clean_bam: false
     min_alt_fraction: 0.0001
     haplotype_length: 0
     min_count: 6
@@ -23,6 +25,10 @@ params:
     o: 5
     r: 0.6
   validation:
+    end_buffer: 35
+    fn_highfreq_thresh: 0.75
+    fp_thresh: 0.75
+    sb_thresh: 600
     vcf_prep_method: pileup
 control_vcf: li_hiv_call3/inputs/controls-freqs.vcf
 controls:
