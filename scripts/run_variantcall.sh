@@ -4,7 +4,7 @@ set -eu -o pipefail
 codedir=~/hsph/li_hiv_call3
 python=/usr/local/share/bcbio_nextgen/anaconda/bin/python
 
-$python $codedir/scripts/reconstruct_populations.py 1 $codedir/config/reconstruct.yaml Control2-ready.bam
+$python $codedir/scripts/reconstruct_populations.py 1 $codedir/config/reconstruct.yaml Control2-ready.bam Control1-ready.bam
 
 # -- abra testing
 cores=4

@@ -52,10 +52,15 @@ def main(cores, config_file, *bam_files):
     regions = _subset_region_file(config["regions"])
     to_prep = []
     to_call = []
-    for bam_file in bam_files:
-        to_call.append((bam_file, config["ref_file"], config["regions"], config))
-        for region, name, region_file in regions:
-            to_prep.append((bam_file, region, name, region_file, config))
+    if config["params"]["caller"] == "lofreq":
+        control_bam = bam_files[0]
+        for bam_file in bam_files[1:]:
+            to_call.append((bam_file, control_bam, config["ref_file"], config["regions"], config))
+    else:
+        for bam_file in bam_files:
+            to_call.append((bam_file, config["ref_file"], config["regions"], config))
+            for region, name, region_file in regions:
+                to_prep.append((bam_file, region, name, region_file, config))
 
     if config["params"]["caller"] == "freebayes":
         called = joblib.Parallel(int(cores))(joblib.delayed(_run_freebayes)(*args) for args in to_call)
@@ -75,7 +80,7 @@ def main(cores, config_file, *bam_files):
         for vcf_file in called:
             if "Control" in vcf_file:
                 _summarize_calls(vcf_file, config["ref_file"], config["control_vcf"],
-                                 config["regions"], config["params"]["validation"])
+                                 config["val_regions"], config["params"]["validation"])
 
 def _run_prep(bam_file, region, name, region_file, config):
     prep_fq1, prep_fq2 = _select_fastq_in_region(bam_file, region, region_file)
@@ -95,31 +100,31 @@ def _run_cleaning(prep_fq1, prep_fq2, region_file, config):
         prep_fq2 = None
     return _realign_merged(prep_fq1, prep_fq2, region_file, config["ref_file"])
 
-def _run_lofreq(bam_file, ref_file, region_file, config):
+def _run_lofreq(bam_file, control_bam, ref_file, region_file, config):
     """Perform pooled variant calling with lofreq.
     """
     params = config["params"]["lofreq"]
     work_dir = "lofreq"
     if not os.path.exists(work_dir):
         os.makedirs(work_dir)
-    if params["prep"] == "gatk":
-        known_vcf = os.path.join(work_dir, "%s-prep-known.vcf.gz" % os.path.splitext(os.path.basename(bam_file))[0])
-        cmd = ("samtools mpileup -uf {ref_file} {bam_file} | bcftools call -mv -Oz > {known_vcf}")
-        if not os.path.exists(known_vcf):
-            subprocess.check_call(cmd.format(**locals()), shell=True)
-        if not os.path.exists(known_vcf + ".tbi"):
-            cmd = "tabix -p vcf -f {known_vcf}"
-            subprocess.check_call(cmd.format(**locals()), shell=True)
-
-        recal_file = os.path.join(work_dir, "%s-prep.grp" % os.path.splitext(os.path.basename(bam_file))[0])
-        cmd = ("java -jar GenomeAnalysisTK.jar -T BaseRecalibrator -R {ref_file} "
-               "-I {bam_file} -L {region_file} -knownSites {known_vcf} -o {recal_file}")
-        if not os.path.exists(recal_file):
-            subprocess.check_call(cmd.format(**locals()), shell=True)
-
-        prep_bam_file = os.path.join(work_dir, "%s-prep%s" % os.path.splitext(os.path.basename(bam_file)))
+    if params["prep"].startswith("gatk"):
+        if params["prep"] == "gatk_viterbi":
+            realign_bam_file = os.path.join(work_dir, "%s-realign%s" % os.path.splitext(os.path.basename(bam_file)))
+            cmd = ("lofreq viterbi -f {ref_file} {bam_file} | "
+                   "samtools sort -O bam -T {realign_bam_file}-tmp -o {realign_bam_file}")
+            if not os.path.exists(realign_bam_file):
+                subprocess.check_call(cmd.format(**locals()), shell=True)
+            bai_file = realign_bam_file + ".bai"
+            if not os.path.exists(bai_file):
+                cmd = "samtools index {realign_bam_file}"
+                subprocess.check_call(cmd.format(**locals()), shell=True)
+        else:
+            realign_bam_file = bam_file
+        recal_file = _get_bqsr_recal_file_control(control_bam, work_dir, ref_file, region_file,
+                                                  config["control_vcf"])
+        prep_bam_file = os.path.join(work_dir, "%s-prep%s" % os.path.splitext(os.path.basename(realign_bam_file)))
         cmd = ("java -jar GenomeAnalysisTK.jar -T PrintReads -R {ref_file} "
-               "-I {bam_file} -L {region_file} -BQSR {recal_file} -o {prep_bam_file}")
+               "-I {realign_bam_file} -L {region_file} -BQSR {recal_file} -o {prep_bam_file}")
         if not os.path.exists(prep_bam_file):
             subprocess.check_call(cmd.format(**locals()), shell=True)
         extra_args = "--call-indels"
@@ -130,7 +135,6 @@ def _run_lofreq(bam_file, ref_file, region_file, config):
                "samtools sort -O bam -T {prep_bam_file}-tmp -o {prep_bam_file}")
         if not os.path.exists(prep_bam_file):
             subprocess.check_call(cmd.format(**locals()), shell=True)
-        out_vcf = "%s.vcf" % os.path.splitext(prep_bam_file)[0]
         extra_args = "--call-indels"
     else:
         prep_bam_file = bam_file
@@ -140,12 +144,47 @@ def _run_lofreq(bam_file, ref_file, region_file, config):
         cmd = "samtools index {prep_bam_file}"
         subprocess.check_call(cmd.format(**locals()), shell=True)
     out_vcf = os.path.join(work_dir, "%s.vcf" % os.path.splitext(os.path.basename(prep_bam_file))[0])
-    if not os.path.exists(out_vcf):
+    if not os.path.exists(out_vcf) or os.path.getsize(out_vcf) == 0:
         sb_thresh = params["sb_thresh"]
-        cmd = ("lofreq call-parallel --pp-threads 4 {prep_bam_file} -f {ref_file} -l {region_file} -N {extra_args} |"
-               "lofreq filter -B {sb_thresh} --sb-incl-indels | vt normalize -r {ref_file} - > {out_vcf}")
+        # cmd = ("lofreq call-parallel --pp-threads 4 {prep_bam_file} -f {ref_file} -l {region_file} -N {extra_args} |"
+        #        "lofreq filter -B {sb_thresh} --sb-incl-indels | vt normalize -r {ref_file} - > {out_vcf}")
+        cmd = ("lofreq call-parallel --pp-threads 3 {prep_bam_file} -f {ref_file} -l {region_file} {extra_args} "
+               "--no-default-filter > {out_vcf}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
-    return out_vcf
+    return _filter_lofreq(out_vcf)
+
+def _filter_lofreq(out_vcf):
+    filter_vcf = "%s-filter%s" % os.path.splitext(out_vcf)
+    if not os.path.exists(filter_vcf) or os.path.getsize(filter_vcf) == 0:
+        cmd = ("bcftools filter -o {filter_vcf} -s LowQual "
+               "-e 'QUAL < 200 & AF < 0.01' "
+               "{out_vcf}")
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    return filter_vcf
+
+def _get_bqsr_recal_file_control(bam_file, work_dir, ref_file, region_file, known_vcf):
+    """Retrieve a BQSR recalibration file using control BAM file with a truth VCF.
+
+    Trains recalibration against the actual low frequency variants in the input.
+    """
+    recal_file = os.path.join(work_dir, "%s-prep.grp" % os.path.splitext(os.path.basename(bam_file))[0])
+    cmd = ("java -jar GenomeAnalysisTK.jar -T BaseRecalibrator -R {ref_file} "
+            "-I {bam_file} -L {region_file} -knownSites {known_vcf} -o {recal_file}")
+    if not os.path.exists(recal_file):
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    return recal_file
+
+def _get_bqsr_recal_file_naive(bam_file, work_dir, ref_file, region_file):
+    """Naive approach to get a recalibration file using samtools mpileup calls as truth set.
+    """
+    known_vcf = os.path.join(work_dir, "%s-prep-known.vcf.gz" % os.path.splitext(os.path.basename(bam_file))[0])
+    cmd = ("samtools mpileup -uf {ref_file} {bam_file} | bcftools call -mv -Oz > {known_vcf}")
+    if not os.path.exists(known_vcf):
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    if not os.path.exists(known_vcf + ".tbi"):
+        cmd = "tabix -p vcf -f {known_vcf}"
+        subprocess.check_call(cmd.format(**locals()), shell=True)
+    return _get_bqsr_recal_file_control(bam_file, work_dir, ref_file, region_file, known_vcf)
 
 def _run_freebayes(bam_file, ref_file, region_file, config):
     """Merge and call haplotype variants with FreeBayes.
@@ -284,7 +323,7 @@ def _summarize_calls(vcf_file, ref_file, control_file, region_file, params):
     sb_fps = 0
     with pysam.VariantFile(vcf_file) as in_bcf:
         for rec in in_bcf:
-            if rec.pos in want_pos[rec.chrom]:
+            if rec.pos in want_pos[rec.chrom] and "PASS" in rec.filter:
                 for alt in rec.alts:
                     key = (rec.chrom, rec.pos, rec.ref, alt)
                     if key in control_calls:
@@ -299,7 +338,7 @@ def _summarize_calls(vcf_file, ref_file, control_file, region_file, params):
                             abovefreq["TP"] += 1
                     elif rec.info.get("SB", 0) > params["sb_thresh"]:
                         sb_fps += 1
-                    elif rec.info["AF"] >= params["fp_thresh"] / 100.0:
+                    elif float(rec.info["AF"]) >= params["fp_thresh"] / 100.0:
                         fps.append((key, dict(rec.info)))
                         abovefreq["FP"] += 1
                     else:
@@ -325,7 +364,7 @@ def _summarize_calls(vcf_file, ref_file, control_file, region_file, params):
     freqs = list(sorted(set(tp_freqs.keys() + fn_freqs.keys()), reverse=True))
     fp_freqs = collections.defaultdict(int)
     for fp in sorted(fps_lowfreq + fps):
-        cur_freq = fp[1]["AF"] * 100.0
+        cur_freq = float(fp[1]["AF"]) * 100.0
         freq = min(freqs, key=lambda x: abs(x - cur_freq))
         fp_freqs[freq] += 1
     print("| freq | TP | FN | FP |")
@@ -334,7 +373,7 @@ def _summarize_calls(vcf_file, ref_file, control_file, region_file, params):
     print("All false positives and negatives")
     wrong = []
     for fp in sorted(fps_lowfreq + fps):
-        wrong.append((fp[0], "%.1f" % (fp[1]["AF"] * 100.0), "FP"))
+        wrong.append((fp[0], "%.1f" % (float(fp[1]["AF"]) * 100.0), "FP"))
     for fn in control_calls.items():
         wrong.append((fn[0], "%.1f" % fn[1], "FN"))
     for x in sorted(wrong):
@@ -879,5 +918,14 @@ def _evaluate_control(hap_file, ref_file):
             ctl_sum[match] += float(freq)
         pprint.pprint(dict(ctl_sum), stream=eval_handle)
 
+def compare_vcf(config_file, vcf_file, region_file):
+    with open(config_file) as in_handle:
+        config = yaml.safe_load(in_handle)
+    _summarize_calls(vcf_file, config["ref_file"], config["control_vcf"],
+                     region_file, config["params"]["validation"])
+
 if __name__ == "__main__":
-    main(*sys.argv[1:])
+    if len(sys.argv) == 4 and sys.argv[2].endswith(".vcf") and sys.argv[3].endswith(".bed"):
+        compare_vcf(*sys.argv[1:])
+    else:
+        main(*sys.argv[1:])
