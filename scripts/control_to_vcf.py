@@ -20,7 +20,7 @@ def main(config_file):
     with open(config_file) as in_handle:
         config = yaml.load(in_handle)
     if tz.get_in(["params", "validation", "vcf_prep_method"], config) == "pileup":
-        out_vcf = pileup_prep_controls(config["controls"], config["ref_file"])
+        out_vcf = pileup_prep_controls(config["controls"], config["ref_file"], config)
     elif tz.get_in(["params", "validation", "vcf_prep_method"], config) == "multialign":
         contig, input_file = make_input_file(control_file, start, end, ref_file, work_dir)
         out_vcf = prep_vcf(input_file, contig, start, jvarkit_path, ref_file)
@@ -43,14 +43,14 @@ def _get_coords(in_file):
 
 # -- pileup based variant calling
 
-def pileup_prep_controls(control_info, ref_file):
+def pileup_prep_controls(control_info, ref_file, config):
     vcfs = []
     for name, control_file in control_info.items():
         start, end = _get_coords(control_file)
         work_dir = os.path.join(os.getcwd(), "%s-prep" % os.path.splitext(os.path.basename(control_file))[0])
         if not os.path.exists(work_dir):
             os.makedirs(work_dir)
-        vcf_file = pileup_call_control(control_file, ref_file, work_dir)
+        vcf_file = pileup_call_control(control_file, ref_file, work_dir, config)
         vcfs.append(((start, end), vcf_file))
     vcfs = [xs[-1] for xs in sorted(vcfs)]
     combined_calls = concat_control_vcfs(vcfs, os.getcwd())
@@ -89,7 +89,7 @@ def concat_control_vcfs(vcfs, work_dir):
     subprocess.check_call(cmd.format(**locals()), shell=True)
     return out_file
 
-def pileup_call_control(control_file, ref_file, work_dir):
+def pileup_call_control(control_file, ref_file, work_dir, config):
     """Call pileup-based variant calling for a set of inputs in a control file.
     """
     inputs = []
@@ -102,16 +102,19 @@ def pileup_call_control(control_file, ref_file, work_dir):
     inputs.sort(reverse=True)
     vcfs = []
     for freq, fasta_file in inputs:
-        vcfs.append(call_with_alignment(fasta_file, ref_file, "%.1f" % freq))
+        vcfs.append(call_with_alignment(fasta_file, ref_file, "%.1f" % freq, config))
     return merge_pileup_calls(vcfs, control_file, ref_file, work_dir)
 
-def call_with_alignment(in_file, ref_file, sample_name):
+def call_with_alignment(in_file, ref_file, sample_name, config):
     """Do alignment and pileup based calling to produce a VCF file for a sample.
     """
     align_file = "%s.bam" % os.path.splitext(in_file)[0]
-    cmd = (r"bwa mem -R '@RG\tID:{sample_name}\tPL:illumina\tPU:{sample_name}\tSM:{sample_name}' "
-           r"{ref_file} {in_file}"
-           r" | samtools sort -O bam -T {align_file}-tmp -o {align_file}")
+    ref_dir, ref_name = os.path.split("%s-gmap" % os.path.splitext(ref_file)[0])
+    cmd = ("gmap -D {ref_dir} -d {ref_name} {in_file} -n 1 "
+           "-f samse --read-group-id={sample_name} --read-group-name={sample_name} "
+           " | samtools sort -O bam -T {align_file}-tmp -o {align_file}")
+    subprocess.check_call(cmd.format(**locals()), shell=True)
+    cmd = "samtools index {align_file}"
     subprocess.check_call(cmd.format(**locals()), shell=True)
     variant_file = "%s.vcf.gz" % os.path.splitext(in_file)[0]
     cmd = ("freebayes -f {ref_file} {align_file} --min-alternate-fraction 0 --pooled-continuous "
