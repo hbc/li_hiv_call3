@@ -326,6 +326,7 @@ def _summarize_calls(vcf_file, ref_file, control_file, region_file, params):
             if rec.pos in want_pos[rec.chrom] and "PASS" in rec.filter:
                 for alt in rec.alts:
                     key = (rec.chrom, rec.pos, rec.ref, alt)
+                    freq = rec.info["AF"] * 100.0
                     if key in control_calls:
                         tp_freqs[control_calls[key]] += 1
                         tps.append(control_calls[key])
