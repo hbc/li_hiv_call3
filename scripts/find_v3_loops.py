@@ -13,14 +13,31 @@ import pysam
 from Bio import pairwise2, SeqIO
 
 def main(ref_v3_file, *fastq_files):
+    method = "count_all"
     v3_seqs = _read_v3_file(ref_v3_file)
     for base, fq1, fq2 in _pair_fastq_files(fastq_files):
         merge_fq = _merge_fastq(fq1, fq2, base)
-        #counts = _count_v3_seqs(merge_fq, v3_seqs)
-        #print "counting", base, counts
-        counts = _align_to_v3_seqs(merge_fq, ref_v3_file)
-        print "aligning", base, counts
-        _extract_seqs_from_align(merge_fq, base, "%s-translate.fa" % os.path.splitext(ref_v3_file)[0])
+        ref_v3_p_file = "%s-translate.fa" % os.path.splitext(ref_v3_file)[0]
+        if method == "count_all":
+            counts = _count_v3_seqs(merge_fq, v3_seqs)
+            _write_all_seqs(base, counts, ref_v3_p_file)
+            print "count_all", base, len(counts)
+        elif method == "align_to_known":
+            counts = _align_to_v3_seqs(merge_fq, ref_v3_file)
+            print "aligning", base, counts
+            _extract_seqs_from_align(merge_fq, base, ref_v3_p_file)
+
+def _write_all_seqs(base, counts, ref_v3_file):
+    """Write out sequences, counts and protein sequences for raw unmatched regions.
+    """
+    out_dir = "hu_v3_all"
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+    out_file = os.path.join(out_dir, "%s-v3.fa" % (base))
+    with open(out_file, "w") as out_handle:
+        for i, (count, seq) in enumerate(sorted([[c, seq] for seq, c in counts.items()], reverse=True)):
+            out_handle.write(">%s-count=%s\n%s\n" % (i, count, seq))
+    _translate_seq(out_file, base, None, ref_v3_file)
 
 def _extract_seqs_from_align(merge_fq, base, ref_v3_p_file):
     bam_file = "%s.bam" % os.path.splitext(merge_fq)[0]
@@ -45,6 +62,8 @@ def _extract_seqs_from_align(merge_fq, base, ref_v3_p_file):
 
 def _translate_seq(in_file, base, match_name, ref_v3_p_file):
     v3_prots = _read_v3_file(ref_v3_p_file)
+    if match_name is None:
+        match_name = sorted(v3_prots.keys())[0]
     prot_file = "%s-orfs.fa" % os.path.splitext(in_file)[0]
     out_file = "%s-protein.fa" % os.path.splitext(in_file)[0]
     cmd = "getorf -minsize 20 -noreverse -outseq {prot_file} -sequence {in_file}"
@@ -79,18 +98,17 @@ def _align_to_v3_seqs(merge_fq, ref_file):
     return dict(counts)
 
 def _count_v3_seqs(merge_fq, v3_seqs):
+    end_size = 10
     counts = collections.defaultdict(int)
     for rec in SeqIO.parse(merge_fq, "fastq"):
-        scores = []
         for v3_name, v3_seq in v3_seqs.items():
-            if str(rec.seq).find(v3_seq[20:45]) >= 0 and str(rec.seq).find(v3_seq[-45:-20]) >= 0:
-                counts[v3_name] += 1
-            #score = _align_two(str(rec.seq), v3_seq)
-            #scores.append((score, v3_name))
-        #scores.sort(reverse=True)
-        #best_score, best_name = scores[0]
-        #if best_score > 50:
-        #    counts[best_name] += 1
+            start = str(rec.seq).find(v3_seq[:end_size])
+            if start >= 0:
+                end = str(rec.seq).find(v3_seq[-end_size:], start)
+                if end >= 0:
+                    cur_seq = str(rec.seq)[start:end + end_size]
+                    counts[cur_seq] += 1
+                    break
     return dict(counts)
 
 def _align_two(s1, s2):
