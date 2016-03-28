@@ -20,7 +20,7 @@ def main(config_file):
     with open(config_file) as in_handle:
         config = yaml.load(in_handle)
     if tz.get_in(["params", "validation", "vcf_prep_method"], config) == "pileup":
-        out_vcf = pileup_prep_controls(config["controls"], config["ref_file"], config)
+        out_vcf = pileup_prep_controls(config["controls"], os.path.abspath(config["ref_file"]), config)
     elif tz.get_in(["params", "validation", "vcf_prep_method"], config) == "multialign":
         contig, input_file = make_input_file(control_file, start, end, ref_file, work_dir)
         out_vcf = prep_vcf(input_file, contig, start, jvarkit_path, ref_file)
