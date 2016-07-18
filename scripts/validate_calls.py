@@ -74,13 +74,19 @@ def _summarize_calls(vcf_file, control_file, region_file, params):
     print("** TP/FP/FN by frequency")
     freqs = list(sorted(set(tp_freqs.keys() + fn_freqs.keys()), reverse=True))
     fp_freqs = collections.defaultdict(int)
-    for fp in sorted(fps_lowfreq + fps):
+    fp_freqs_low = collections.defaultdict(int)
+    for fp in sorted(fps):
         cur_freq = float(fp[1]["AF"]) * 100.0
         freq = min(freqs, key=lambda x: abs(x - cur_freq))
         fp_freqs[freq] += 1
-    print("| freq | TP | FN | FP |")
+    for fp in sorted(fps_lowfreq):
+        cur_freq = float(fp[1]["AF"]) * 100.0
+        freq = min(freqs, key=lambda x: abs(x - cur_freq))
+        fp_freqs_low[freq] += 1
+    print("| freq | TP | FN | FP | FP low |")
     for freq in freqs:
-        print("| %.1f | %s | %s | %s |" % (freq, tp_freqs[freq], fn_freqs[freq], fp_freqs[freq]))
+        print("| %.1f | %s | %s | %s | %s |" % (freq, tp_freqs[freq], fn_freqs[freq],
+              fp_freqs[freq], fp_freqs_low[freq]))
     print "** Called frequencies for TPs"
     print("| freq | median | min | max |")
     for freq in freqs:

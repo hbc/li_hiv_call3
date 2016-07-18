@@ -53,9 +53,13 @@ def main(cores, config_file, *bam_files):
     to_prep = []
     to_call = []
     if config["params"]["caller"] == "lofreq":
-        control_bam = bam_files[0]
-        for bam_file in bam_files[1:]:
-            to_call.append((bam_file, control_bam, config["ref_file"], config["regions"], config))
+        if config.get("control_vcf"):
+            control_bam = bam_files[0]
+            for bam_file in bam_files[1:]:
+                to_call.append((bam_file, control_bam, config["ref_file"], config["regions"], config))
+        else:
+            for bam_file in bam_files:
+                to_call.append((bam_file, None, config["ref_file"], config["regions"], config))
     else:
         for bam_file in bam_files:
             to_call.append((bam_file, config["ref_file"], config["regions"], config))
@@ -148,7 +152,9 @@ def _run_lofreq(bam_file, control_bam, ref_file, region_file, config):
         sb_thresh = params["sb_thresh"]
         # cmd = ("lofreq call-parallel --pp-threads 4 {prep_bam_file} -f {ref_file} -l {region_file} -N {extra_args} |"
         #        "lofreq filter -B {sb_thresh} --sb-incl-indels | vt normalize -r {ref_file} - > {out_vcf}")
-        cmd = ("lofreq call-parallel --pp-threads 3 {prep_bam_file} -f {ref_file} -l {region_file} {extra_args} "
+        downsample_n = config["params"]["lofreq"].get("downsample")
+        downsample = "-d %s" % (downsample_n) if downsample_n else ""
+        cmd = ("lofreq call-parallel --pp-threads 8 {prep_bam_file} {downsample} -f {ref_file} -l {region_file} {extra_args} "
                "--no-default-filter > {out_vcf}")
         subprocess.check_call(cmd.format(**locals()), shell=True)
     return _filter_lofreq(out_vcf)
